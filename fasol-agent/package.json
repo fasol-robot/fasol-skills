@@ -1,0 +1,16 @@
+{
+  "name": "@fasol/fasol-agent-skill",
+  "version": "0.1.0",
+  "description": "Fasol agent skill — runnable Node helpers for the Fasol API",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "scope": "node scripts/get-scope.mjs",
+    "stats": "node scripts/coin-stats.mjs",
+    "positions": "node scripts/list-positions.mjs"
+  },
+  "license": "MIT"
+}
