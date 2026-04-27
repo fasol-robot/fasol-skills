@@ -112,6 +112,32 @@ let exitsArmed = false;
 let lastActionTs = null;
 const startedAt = Date.now();
 
+// IDs of relative orders (TP / SL / trailing) we placed in the current cycle.
+// Fasol does NOT auto-delete TP/SL/trailing on fire — they go to sleep and
+// re-arm on the NEXT buy with a fresh trigger relative to the new entry. To
+// keep cycles clean we track every relative-order id we create and cancel
+// them all whenever the cycle ends (stop / SIGINT / explicit cleanup).
+// See SKILL.md → "TP/SL/trailing lifecycle".
+let placedRelativeOrderIds = [];
+
+const cleanupPlacedOrders = async () => {
+  if (placedRelativeOrderIds.length === 0) return;
+  const ids = placedRelativeOrderIds;
+  placedRelativeOrderIds = [];
+  log("cleanup_orders", { count: ids.length, ids });
+  // Fire all cancels in parallel — DELETE on a deactivated order is a no-op,
+  // so missing some is benign. Failures are logged but never throw.
+  await Promise.all(
+    ids.map((id) =>
+      safeCall(`cancel/${id}`, () =>
+        api("DELETE", `/orders/${encodeURIComponent(id)}`, {
+          body: { coin_address: CONFIG.coin_address },
+        }),
+      ).catch((err) => log("cleanup_cancel_failed", { id, message: err?.message })),
+    ),
+  );
+};
+
 const log = (event, fields = {}) => {
   // Single JSON line per log entry — easy for the agent to tail/grep.
   process.stdout.write(JSON.stringify({
@@ -169,7 +195,7 @@ const applyAction = async (action) => {
 
     case "tp_sl": {
       log("arm_exits", { tp_p: action.take_profit_p, sl_p: action.stop_loss_p });
-      await safeCall("place_order/take_profit", () =>
+      const tp = await safeCall("place_order/take_profit", () =>
         api("POST", "/orders", {
           body: {
             type: "take_profit",
@@ -179,7 +205,9 @@ const applyAction = async (action) => {
           },
         }),
       );
-      await safeCall("place_order/stop_loss", () =>
+      // Track id so cleanupPlacedOrders() can cancel it at cycle end.
+      if (tp?.data?.id) placedRelativeOrderIds.push(tp.data.id);
+      const sl = await safeCall("place_order/stop_loss", () =>
         api("POST", "/orders", {
           body: {
             type: "stop_loss",
@@ -189,6 +217,7 @@ const applyAction = async (action) => {
           },
         }),
       );
+      if (sl?.data?.id) placedRelativeOrderIds.push(sl.data.id);
       exitsArmed = true;
       lastActionTs = Date.now();
       return;
@@ -266,18 +295,26 @@ process.on("SIGTERM", () => { log("signal", { name: "SIGTERM" }); stopRequested 
 
 (async () => {
   log("strategy_start", { config: CONFIG });
-  for (let i = 0; i < CONFIG.max_iterations && !stopRequested; i++) {
-    try {
-      await tick(i);
-    } catch (err) {
-      log("tick_error", { iteration: i, message: err?.message });
+  try {
+    for (let i = 0; i < CONFIG.max_iterations && !stopRequested; i++) {
+      try {
+        await tick(i);
+      } catch (err) {
+        log("tick_error", { iteration: i, message: err?.message });
+      }
+      if (stopRequested) break;
+      await sleep(CONFIG.poll_seconds * 1000);
     }
-    if (stopRequested) break;
-    await sleep(CONFIG.poll_seconds * 1000);
+  } finally {
+    // Always run cleanup — if we placed any TP/SL/trailing orders this run,
+    // cancel them so they don't re-arm against a future buy. See SKILL.md
+    // "TP/SL/trailing lifecycle" for the full why.
+    await cleanupPlacedOrders();
   }
   log("strategy_end", { iterations_done: "see_above", reason: stopRequested ? "stopped" : "max_iterations" });
   cliLog.ok("strategy ended");
 })().catch((err) => {
   log("fatal", { message: err?.message });
-  process.exit(1);
+  // Best-effort cleanup on fatal too — don't leak orders.
+  cleanupPlacedOrders().finally(() => process.exit(1));
 });

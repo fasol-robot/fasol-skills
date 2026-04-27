@@ -270,6 +270,60 @@ Cancellation is best-effort: a TP/SL that already triggered (in flight) cannot b
 
 ---
 
+## TP/SL/trailing lifecycle — they persist and re-arm
+
+> **⚠️ Critical for strategy authors:** when a `take_profit`, `stop_loss`, or `trailing` order **fires** (the sell executes), the order entity is **NOT deleted** — it just becomes deactivated/sleeping. Crucially, **the next time a position opens on the same coin, the order re-arms** with a fresh `trigger_price` computed against the new entry.
+>
+> This is by design (so you can hit the same exit ladder repeatedly on a coin you scalp), but it's a sharp edge for any agent that loops:
+>
+> - If you placed `stop_loss -7%` for cycle N, then opened a new buy in cycle N+1 at a different (lower) entry price, the **old SL re-arms with a new trigger relative to the new entry** — and may fire instantly if that trigger is already breached, closing your position the moment it opens.
+> - Multiple stale TP/SL/trailing on the same coin all coexist; the first to fire wins. So a stack like `[TP+25%, TP+10%, SL-7%, SL-7%]` from prior cycles will all activate on each new buy.
+>
+> **What to do:** after each cycle's position closes, explicitly `DELETE /orders/{id}` for every TP, SL, and trailing order you placed in that cycle. Track the IDs you placed and clean them up before the next buy. Cancellation of an already-fired (deactivated) order is benign — safe to always call.
+
+```js
+// Cycle pattern — track every relative-order id you create, cancel them all
+// when the cycle ends (whether the cycle ended via TP, SL, manual exit, or
+// time-out). This guarantees a clean slate for the next entry.
+const placedOrderIds = [];
+
+async function openCycle(coinAddress, entryTriggerPrice, amountSol) {
+  const buy = await api("POST", "/orders", {
+    body: { type: "limit_buy", coin_address: coinAddress, trigger_price: entryTriggerPrice, amount_sol: amountSol },
+  });
+  // limit_buy is one-shot, no need to track for cleanup
+
+  const tp = await api("POST", "/orders", {
+    body: { type: "take_profit", coin_address: coinAddress, trigger_p: "30", sell_p: "100" },
+  });
+  placedOrderIds.push(tp.data.id);
+
+  const sl = await api("POST", "/orders", {
+    body: { type: "stop_loss", coin_address: coinAddress, trigger_p: "-15", sell_p: "100" },
+  });
+  placedOrderIds.push(sl.data.id);
+}
+
+async function closeCycle(coinAddress) {
+  // Try to cancel every relative order we created. Safe even if some already
+  // fired — DELETE on a deactivated order is a no-op.
+  await Promise.all(placedOrderIds.map((id) =>
+    api("DELETE", `/orders/${id}`, { body: { coin_address: coinAddress } })
+      .catch((err) => console.warn(`[cleanup] cancel ${id} failed: ${err.message}`)),
+  ));
+  placedOrderIds.length = 0;
+}
+```
+
+If the strategy is killed mid-cycle (Ctrl-C, process restart), the next run won't know which IDs were yours. Two ways to handle that:
+
+1. **Persist the IDs** to a file / Redis as you place them; reload on startup and cancel before the first buy of the new run.
+2. **Best-effort sweep:** on startup, fetch the wallet's open orders for the coin (via your own bookkeeping or a separate "list orders" endpoint when added) and cancel anything tagged `take_profit` / `stop_loss` / `trailing` for the coin you're about to trade.
+
+**The strategy template in this repo (`scripts/strategy-template.mjs`) does (1) automatically** — it tracks the IDs it places and cancels them on `stop` / SIGINT.
+
+---
+
 ## Snapshot tools (historical state) — all require `read_coins`
 
 `coin_stats` gives you the **current** state of a coin. The four snapshot endpoints below let you query its **historical** state — every snapshot the platform has saved while the coin was actively trading.
@@ -751,6 +805,7 @@ The template handles:
 You write:
 - The `decide()` function: given current `coin_stats` + `list_positions` + last action timestamp, return one of `{ kind: "buy", trigger_price, amount_sol }`, `{ kind: "sell", sell_p }`, `{ kind: "wait" }`, `{ kind: "stop", reason }`.
 - The constants block (entry/exit thresholds, max loss, max iterations, etc.).
+- **Cleanup after each cycle**: cancel the TP/SL order IDs you placed — Fasol does NOT auto-delete them on fire, and they will re-arm on the next buy with stale levels. See "TP/SL/trailing lifecycle" section.
 
 Don't get clever. The agent is the brain that intervenes occasionally; the script is the dumb-but-tireless inner loop.
 
