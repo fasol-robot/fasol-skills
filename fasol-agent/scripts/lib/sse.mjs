@@ -135,6 +135,19 @@ export function subscribeTxStream({ coin_address, signal } = {}) {
   return streamSSE(url, { signal });
 }
 
+/**
+ * Subscribe to every swap on a coin (any wallet) — for live volume / VWAP /
+ * order-flow indicators. Yields:
+ *   { event: "ready", data: {...} }     once on connect
+ *   { event: "trade", data: { coin_address, trade } }  on each swap
+ *
+ * `trade` is the LiveTrade shape used by the coin terminal:
+ * { wallet, buy_sell, amount_sol, amount_coin, hash, date, price_usd, ... }
+ */
+export function subscribeCoinTradeStream(coinAddress, opts = {}) {
+  return streamSSE(`${STREAM_BASE}/coin/${coinAddress}/trades`, opts);
+}
+
 // Parse one SSE block (already split on \n\n). Returns { event, data } or null.
 function parseSseBlock(block) {
   let event = "message";
