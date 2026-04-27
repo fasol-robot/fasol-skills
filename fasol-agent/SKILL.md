@@ -401,6 +401,90 @@ Don't try to recreate `snapshot_scan` by sweeping `coin_stats` — `coin_stats` 
 
 ---
 
+## Live price stream (SSE) — for active / flip strategies
+
+Polling `coin_stats` every 30 seconds is fine for monitor-and-react, **bad** for active trading. When the strategy needs sub-second reaction time (flip a coin, ladder out of a pump, react to a sniper), connect to the live price stream instead.
+
+### `price_stream` — `GET /coin/{coin_address}/stream` (Server-Sent Events)
+
+Long-lived HTTP connection. The server forwards every price tick from the on-chain pipeline (≈ one batch per Solana block, ~400ms) for the requested coin. Same `read_coins` scope as the rest of the read endpoints.
+
+**Wire format** — standard SSE:
+
+```
+event: ready
+data: { "coin_address": "...", "agent_id": 3, "server_time": "2026-04-27T..." }
+
+data: { "type": "price", "coin_address": "...", "pair_address": "...",
+        "version": "pam", "price_usd": "0.00001234", "price_sol": "0.0000000123",
+        "sol_reserve_d": "...", "coin_reserve_d": "...", "slot": 372881234,
+        "ts": 1745779200123 }
+
+: heartbeat
+
+data: { "type": "price", ... }
+```
+
+- `event: ready` — sent once on connect with stream metadata
+- `data: { type: "price", ... }` — sent on every tick
+- `: heartbeat` — comment line every 15 s to keep proxies / load-balancers from killing the connection. Ignore it.
+
+If the coin migrates while you're connected, the stream **does not break**: the server filters by `coin_address`, and the new pair's prices flow through the same connection. `pair_address` and `version` in the event tell you about the migration.
+
+**Important:** SSE is one-way (server → you). To act on a tick you still call `place_order` / `cancel_order` over normal HTTP.
+
+### Curl example
+
+```bash
+curl -N -H "Authorization: Bearer $FASOL_API_KEY" \
+  "$FASOL_API_BASE_URL/coin/<COIN>/stream"
+```
+
+`-N` disables curl buffering so you see ticks as they arrive.
+
+### Node consumer (in the public skill repo)
+
+The skill repo ships a tiny SSE helper at [`scripts/lib/sse.mjs`](scripts/lib/sse.mjs) — no dependencies, uses native `fetch` streaming. Auto-reconnects on transient errors with backoff; gives up on `401 / 403 / 404`.
+
+```js
+import { subscribeCoinPriceStream } from "./lib/sse.mjs";
+
+const COIN = "DezX...263";
+for await (const evt of subscribeCoinPriceStream(COIN)) {
+  if (evt.event !== "price" && evt.event !== "ready") continue;
+  if (evt.event === "ready") {
+    console.log("[sse] connected", evt.data);
+    continue;
+  }
+  const tick = evt.data;
+  // tick.price_usd, tick.slot, tick.sol_reserve_d ... whatever you need
+  decideAndAct(tick);
+}
+```
+
+Use this when the strategy script needs to react on every tick, not on a fixed poll interval.
+
+### When to use stream vs. poll
+
+| Pattern                                                     | Use         |
+|-------------------------------------------------------------|-------------|
+| Watch-and-buy on a price condition that moves fast (flip)   | **Stream**  |
+| Trail / scalp / ladder exits inside a pump                  | **Stream**  |
+| Background monitor of an open position checking PnL slowly  | Poll (30s)  |
+| Heartbeat checks "is dev still holding"                     | Poll (5–10m) |
+| One-shot lookups for a confirmation                         | `coin_stats` |
+
+The HTTP poll path has a 60 rpm rate limit. The stream is **not** rate-limited per tick (only the initial connect counts). One stream per coin per agent.
+
+### Failure modes
+
+- **Server restart** → connection drops, the helper reconnects with backoff (1 s → 30 s capped).
+- **Auth revoked / scope changed** → `401` / `403` — the helper throws and the strategy must stop.
+- **Coin not active for a long time** → no ticks (this is normal, not a bug). Use a deadline timer in the strategy if "no price for N minutes" is itself a signal.
+- **Pair migration** → no break; expect a `version` change inside the same stream.
+
+---
+
 ## Web links — ALWAYS link mentioned coins / wallets / orders
 
 Whenever you mention a coin, wallet, alert, or ml_order in your output, **render it as a clickable link to the Fasol web app** so your owner can open it in one click. Don't just show a raw address.
