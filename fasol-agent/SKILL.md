@@ -401,6 +401,66 @@ Don't try to recreate `snapshot_scan` by sweeping `coin_stats` — `coin_stats` 
 
 ---
 
+## OHLC candles — historical + near-real-time
+
+Two candle endpoints, both under `read_coins`. Use when you want chart-style data — backtesting an entry, plotting a recent move, computing simple TA (EMA, ATR) on the fly. Both return the same shape:
+
+```json
+{
+  "coin_address": "...",
+  "interval": 5,
+  "candles": [{ "ts": 1745779200, "open": "0.0000123", "high": "...", "low": "...", "close": "..." }]
+}
+```
+
+`ts` is unix seconds. Each candle's `open` equals the previous candle's `close` — server-side post-processing for visual continuity.
+
+### `get_candles` — `GET /coin/{coin_address}/candles?interval=5&before=<ts>&after=<ts>`
+
+Historical OHLC from ClickHouse `db.price`. Cursor-paginated: pass `before=<unix_sec>` to walk back, or `after=<unix_sec>` to walk forward. Up to **1000 candles per call**, `interval` 1–3600 seconds.
+
+```bash
+# Last 1000 5-second candles, walking back from now:
+curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
+  --data-urlencode "interval=5" \
+  "$FASOL_API_BASE_URL/coin/<COIN>/candles"
+
+# Walk further back: pass the oldest ts you got from the previous call as `before`:
+curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
+  --data-urlencode "interval=5" \
+  --data-urlencode "before=1745776000" \
+  "$FASOL_API_BASE_URL/coin/<COIN>/candles"
+```
+
+Tips:
+- For a chart "since the coin migrated", call `coin_stats` first → read `pair_created_seconds_ago` → compute the unix timestamp → pass as `after`.
+- For 1-minute candles use `interval=60`; for 1-hour `interval=3600` (the cap).
+- Coverage is bounded by the platform's `db.price` retention (rolling weeks).
+
+### `get_candles_fast` — `GET /coin/{coin_address}/candles_fast?interval=5`
+
+Last **~5 minutes** of OHLC straight from Redis time-series. Sub-second freshness, no cursor — just the latest window. `interval` 1–300 seconds.
+
+```bash
+curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
+  --data-urlencode "interval=5" \
+  "$FASOL_API_BASE_URL/coin/<COIN>/candles_fast"
+```
+
+### When to use which (and when to use neither)
+
+| You want…                                          | Use                          |
+|----------------------------------------------------|------------------------------|
+| Last 5–60 minutes of 5s candles to plot or scan    | `get_candles_fast`           |
+| Anything older than ~5 minutes, or a long window   | `get_candles` (with `before`) |
+| Tick-by-tick reaction inside a flip / scalp        | **`price_stream` (SSE)** — see below |
+| One-shot "what's the price right now"              | `coin_stats.price_usd`       |
+| Snapshot of the full coin state at a moment        | `snapshot_*` tools           |
+
+Don't poll `get_candles_fast` faster than every 5 seconds — for sub-second loops use the SSE stream and aggregate ticks yourself.
+
+---
+
 ## Live price stream (SSE) — for active / flip strategies
 
 Polling `coin_stats` every 30 seconds is fine for monitor-and-react, **bad** for active trading. When the strategy needs sub-second reaction time (flip a coin, ladder out of a pump, react to a sniper), connect to the live price stream instead.
