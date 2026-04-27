@@ -332,6 +332,126 @@ When `place_order` is called via the agent API, the server tags the row with `so
 
 This lets the agent operate alongside human-placed orders without stomping on them.
 
+### `list_trades` — `GET /trades` (requires `read_positions`)
+
+**The source of truth for realised PnL.** When a TP/SL/trailing order fires, the order entity loses its sell-side data (it gets reset for re-arming). The actual sell price, sell SOL, and tx hash live in `sol.tb_tx`. This endpoint surfaces them.
+
+```bash
+# Default: last 24h, all coins, latest 100
+curl -s -H "Authorization: Bearer $FASOL_API_KEY" "$FASOL_API_BASE_URL/trades"
+
+# Scope to one coin + a specific window
+curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
+  --data-urlencode "coin_address=<COIN>" \
+  --data-urlencode "from_ts=1745779200000" \
+  --data-urlencode "to_ts=1745782800000" \
+  --data-urlencode "limit=200" \
+  "$FASOL_API_BASE_URL/trades"
+```
+
+Query params (all optional):
+
+| Param           | Default                | Notes                                                              |
+|-----------------|------------------------|--------------------------------------------------------------------|
+| `coin_address`  | unset (all coins)      | Solana mint                                                        |
+| `from_ts`       | `now - 24h`            | unix ms                                                            |
+| `to_ts`         | `now`                  | unix ms                                                            |
+| `limit`         | `100`, max **`500`**   | results per call; paginate further by lowering `to_ts`              |
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "id": 123456,
+      "ts": 1745779200123,
+      "hash": "5Qw...",
+      "coin_address": "...",
+      "symbol": "BONK",
+      "direction": "buy",
+      "tx_type": "limit_buy",
+      "amount_sol": "0.10000000",
+      "amount_coin": "8123456.789",
+      "amount_usd": "12.34",
+      "price_usd": "0.000001518800",
+      "price_sol": "0.000000012310",
+      "fees_sol": "0.00000500",
+      "fasol_fee_sol": "0.00006100",
+      "order_id": "ord_abc",
+      "source_kind": "agent",
+      "source_id": "3",
+      "error_text": null
+    }
+  ],
+  "summary": { "total": 12, "buys": 6, "sells": 5, "failed": 1 },
+  "window":  { "from_ts": 1745695200000, "to_ts": 1745781600000, "limit": 100 }
+}
+```
+
+**Field semantics:**
+
+- **`direction`**: `"buy"` or `"sell"` — the same as the original `buy_sell` column.
+- **`tx_type`**: how this trade was originated. Values you'll see:
+  - `limit_buy` / `limit_sell` — Fasol orders engine fired the trade
+  - `take_profit` / `stop_loss` / `trailing` — relative-order fires (these are sells)
+  - `ml_buy` / `ml_sell` — fired from an ml_order strategy
+  - `qb` / `terminal` — manual user trade (UI / Telegram quick-buy)
+- **`order_id`**: id of the order that fired (orders engine row, OR ml_order id). **Null** for manual trades. Cross-reference with `list_orders` if you want to know what was configured.
+- **`source_kind` / `source_id`**: same ownership tags as on orders — `"agent"`+`<my_agent_id>` is yours.
+- **`error_text`**: `null` for successful trades, a message for failed ones. Failed trades are **included** so you can see what didn't land.
+- **`price_usd` / `price_sol`**: precomputed at 12dp so you don't divide JS floats. Already accounts for slippage at execution time — this IS the actual fill price.
+- **`amount_usd`**: USD value at execution time. Use it for cycle PnL in USD without a separate price call.
+
+### Worked example — realised PnL of one cycle
+
+```js
+// You opened a cycle for BONK at cycleStartTs (epoch ms). Now compute net PnL.
+const r = await api("GET", `/trades?coin_address=${coin}&from_ts=${cycleStartTs}`);
+const succ = r.data.filter(t => !t.error_text);
+const buys  = succ.filter(t => t.direction === "buy");
+const sells = succ.filter(t => t.direction === "sell");
+
+const sumBig = (xs) => xs.reduce((a, b) => a.plus(b), new BigNumber(0));
+const solIn  = sumBig(buys.map(t  => new BigNumber(t.amount_sol)));
+const solOut = sumBig(sells.map(t => new BigNumber(t.amount_sol)));
+const fees   = sumBig(succ.flatMap(t => [
+  new BigNumber(t.fees_sol),
+  new BigNumber(t.fasol_fee_sol),
+]));
+
+const realisedPnlSol = solOut.minus(solIn).minus(fees);
+const usdIn  = sumBig(buys.map(t  => new BigNumber(t.amount_usd)));
+const usdOut = sumBig(sells.map(t => new BigNumber(t.amount_usd)));
+const realisedPnlUsd = usdOut.minus(usdIn);  // fees are in SOL — multiply by SOL price for full USD net
+
+console.log(`Cycle PnL: ${realisedPnlSol.toFixed(4)} SOL  (${realisedPnlUsd.toFixed(2)} USD)`);
+```
+
+For overall strategy PnL: same query without `coin_address`, sum across all cycles.
+
+### `wallet_balance` — `GET /wallet_balance` (requires `read_positions`)
+
+Live SOL balance of the user's primary wallet. Useful for sanity checks (start/end of strategy run) and sizing decisions ("can I afford this 0.1 SOL buy?").
+
+```bash
+curl -s -H "Authorization: Bearer $FASOL_API_KEY" "$FASOL_API_BASE_URL/wallet_balance"
+```
+
+```json
+{
+  "data": {
+    "wallet": "...",
+    "sol_balance_lamports": "1234567890",
+    "sol_balance": "1.234567890",
+    "sol_balance_usd": "234.57",
+    "sol_price_usd": "190.12"
+  }
+}
+```
+
+`wallet_balance` is a coarse cross-check; `list_trades` is what you use for per-cycle accounting.
+
 ---
 
 ## TP/SL/trailing lifecycle — they persist and re-arm
