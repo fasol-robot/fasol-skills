@@ -38,20 +38,17 @@ const BACKOFF_INITIAL_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 
 /**
- * Subscribe to a coin's live price stream. Async generator that yields events:
- *   { event: "ready",     data: {...} }     once on connect
- *   { event: "price",     data: {...} }     on each price tick
- *   { event: "heartbeat", data: null  }     ignored upstream — we filter out
- *
- * Iteration ends only on terminal HTTP error or when caller breaks the loop.
+ * Generic SSE consumer. Async generator yielding `{ event, data }` blocks.
+ * Auto-reconnect with capped exponential backoff on transient HTTP / network
+ * errors. Throws on terminal codes (400 / 401 / 403 / 404).
  */
-export async function* subscribeCoinPriceStream(coinAddress, { signal } = {}) {
+async function* streamSSE(url, { signal } = {}) {
   let backoff = BACKOFF_INITIAL_MS;
 
   while (!signal?.aborted) {
     let response;
     try {
-      response = await fetch(`${STREAM_BASE}/coin/${coinAddress}`, {
+      response = await fetch(url, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${KEY}`,
@@ -77,14 +74,12 @@ export async function* subscribeCoinPriceStream(coinAddress, { signal } = {}) {
       backoff = Math.min(BACKOFF_MAX_MS, backoff * 2);
       continue;
     }
-    // Connected — reset backoff for the next reconnect cycle.
     backoff = BACKOFF_INITIAL_MS;
 
     if (!response.body) {
       throw new Error("no response body — runtime missing fetch streaming");
     }
 
-    // Read the stream as text and split on the SSE event boundary `\n\n`.
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -111,11 +106,33 @@ export async function* subscribeCoinPriceStream(coinAddress, { signal } = {}) {
       try { reader.cancel(); } catch {}
     }
 
-    // Connection dropped — wait then reconnect.
     if (signal?.aborted) return;
     await sleep(backoff, undefined, { signal });
     backoff = Math.min(BACKOFF_MAX_MS, backoff * 2);
   }
+}
+
+/**
+ * Subscribe to one coin's live price stream. Yields:
+ *   { event: "ready", data: {...} }     once on connect
+ *   { event: "price", data: {...} }     on each price tick
+ */
+export function subscribeCoinPriceStream(coinAddress, opts = {}) {
+  return streamSSE(`${STREAM_BASE}/coin/${coinAddress}`, opts);
+}
+
+/**
+ * Subscribe to live tx-status events for the authenticated wallet. Yields:
+ *   { event: "ready", data: {...} }     once on connect
+ *   { event: "tx",    data: {...} }     on each NotifyTxEvent
+ *
+ * Optional `coin_address` narrows to one coin server-side.
+ */
+export function subscribeTxStream({ coin_address, signal } = {}) {
+  const url = coin_address
+    ? `${STREAM_BASE}/tx?coin_address=${encodeURIComponent(coin_address)}`
+    : `${STREAM_BASE}/tx`;
+  return streamSSE(url, { signal });
 }
 
 // Parse one SSE block (already split on \n\n). Returns { event, data } or null.

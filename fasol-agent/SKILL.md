@@ -787,6 +787,105 @@ The HTTP poll path has a 60 rpm rate limit. The stream is **not** rate-limited p
 
 ---
 
+## Live tx-status stream (SSE) — for instant fill / failure events
+
+The price stream tells you what the market is doing. The **tx stream** tells you what **your own wallet** is doing — every swap (buy / sell, success / fail) the platform processes for the authenticated user, pushed as soon as the chain confirms.
+
+This is what closes the loop on `place_order`: instead of polling `list_trades` every few seconds to find out if your buy filled, you wait for the `tx` event with that order's `hash`.
+
+### `tx_stream` — `GET /agent_stream/tx[?coin_address=<addr>]` (`read_positions`)
+
+```bash
+# All wallet activity:
+curl -N -H "Authorization: Bearer $FASOL_API_KEY" "$STREAM_BASE/tx"
+
+# Narrow to one coin:
+curl -N -G -H "Authorization: Bearer $FASOL_API_KEY" \
+  --data-urlencode "coin_address=<COIN>" \
+  "$STREAM_BASE/tx"
+```
+
+(`STREAM_BASE` derivation is the same as for the price stream — see above.)
+
+**Wire format:**
+
+```
+event: ready
+data: { "user_id": 50772161, "agent_id": 3, "coin_filter": null, "server_time": "..." }
+
+data: {
+  "type": "tx",
+  "hash": "5Qw...",
+  "status": "success" | "failed" | "pending" | "rejected" | "processed",
+  "commitment": "processed" | "confirmed",
+  "user_id": 50772161,
+  "wallet": "...",
+  "coin_address": "...",
+  "buy_sell": "buy" | "sell",
+  "type": "limit_buy" | "take_profit" | "stop_loss" | "trailing" | "limit_sell" | "qb" | "ml_buy" | "ml_sell" | "...",
+  "amount_sol": "0.10000000",
+  "amount_coin": "8123456",
+  "amount_usd": "12.34",
+  "price_usd": "0.00000152",
+  "wallet_coin_balance_d": "8123456",      // post-tx coin balance (for sells: what's left)
+  "post_wallet_sol_balance_d": "1234567890", // post-tx SOL balance (lamports)
+  "fees": "0.000005",
+  "fasol_fee": "0.000061",
+  "error_text": null
+}
+
+: heartbeat
+```
+
+You'll typically see TWO events per swap: first `commitment: "processed"` (~400ms after submit), then `commitment: "confirmed"` (~3-7s later). Treat `confirmed` as the authoritative fill — the chain has voted on it. If you act on `processed` you're trading speed for a small risk of reorg invalidating the trade.
+
+### Node consumer
+
+```js
+import { subscribeTxStream } from "./lib/sse.mjs";
+
+for await (const evt of subscribeTxStream({ coin_address: COIN })) {
+  if (evt.event !== "tx") continue;
+  const tx = evt.data;
+  if (tx.commitment !== "confirmed") continue;     // wait for finality
+  if (tx.error_text) {
+    console.error(`Trade failed: ${tx.error_text}`);
+    continue;
+  }
+  if (tx.buy_sell === "buy" && tx.type === "limit_buy") {
+    console.log(`✅ Buy filled @ $${tx.price_usd}, balance now ${tx.wallet_coin_balance_d}`);
+  }
+  if (tx.buy_sell === "sell" && (tx.type === "take_profit" || tx.type === "stop_loss")) {
+    console.log(`✅ Exit ${tx.type} @ $${tx.price_usd}, received ${tx.amount_sol} SOL`);
+  }
+}
+```
+
+### When to use stream vs. `list_trades` poll
+
+| Pattern                                                       | Use         |
+|---------------------------------------------------------------|-------------|
+| Active strategy that needs to know "did my buy fill" right now | **Stream**  |
+| Reacting to TP / SL fires for next-cycle decisions             | **Stream**  |
+| End-of-cycle PnL accounting                                    | `list_trades` |
+| Backfill of history older than the strategy's connection time  | `list_trades` |
+
+Stream gives you the events that happened **while you're connected**. `list_trades` is the catch-up tool — anything from before the connection, plus a sanity check at the end of a cycle. Use both in tandem:
+
+1. Connect tx_stream at strategy start
+2. Place orders, react to the events as they arrive
+3. At cycle end, call `list_trades` to compute final PnL (catches anything the stream might have dropped during a brief disconnect)
+
+### Failure modes
+
+Same as price stream:
+
+- **Server restart** → reconnect with backoff (1 s → 30 s capped) via the helper
+- **Auth revoked** → `401` / `403`, helper throws — stop the strategy
+- **No swaps for a long time** → no events, normal. Heartbeat keeps the connection up
+
+---
+
 ## Web links — ALWAYS link mentioned coins / wallets / orders
 
 Whenever you mention a coin, wallet, alert, or ml_order in your output, **render it as a clickable link to the Fasol web app** so your owner can open it in one click. Don't just show a raw address.
