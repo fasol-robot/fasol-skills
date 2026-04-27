@@ -17,7 +17,13 @@
 
 import { setTimeout as sleep } from "timers/promises";
 
-const BASE_URL = process.env.FASOL_API_BASE_URL || "https://api.fasol.trade/trading_bot/agent";
+// FASOL_API_BASE_URL points at /trading_bot/agent on the API process. The SSE
+// stream lives on the WS process behind nginx at /agent_stream/* on the same
+// host. We derive the stream base from the API base by stripping the suffix.
+// Override explicitly via FASOL_STREAM_BASE_URL if your deploy splits hosts.
+const API_BASE = process.env.FASOL_API_BASE_URL || "https://api.fasol.trade/trading_bot/agent";
+const STREAM_BASE = process.env.FASOL_STREAM_BASE_URL ||
+  API_BASE.replace(/\/trading_bot\/agent\/?$/, "") + "/agent_stream";
 const KEY = process.env.FASOL_API_KEY;
 
 if (!KEY) {
@@ -45,7 +51,7 @@ export async function* subscribeCoinPriceStream(coinAddress, { signal } = {}) {
   while (!signal?.aborted) {
     let response;
     try {
-      response = await fetch(`${BASE_URL}/coin/${coinAddress}/stream`, {
+      response = await fetch(`${STREAM_BASE}/coin/${coinAddress}`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${KEY}`,

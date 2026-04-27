@@ -405,9 +405,11 @@ Don't try to recreate `snapshot_scan` by sweeping `coin_stats` — `coin_stats` 
 
 Polling `coin_stats` every 30 seconds is fine for monitor-and-react, **bad** for active trading. When the strategy needs sub-second reaction time (flip a coin, ladder out of a pump, react to a sniper), connect to the live price stream instead.
 
-### `price_stream` — `GET /coin/{coin_address}/stream` (Server-Sent Events)
+### `price_stream` — `GET /agent_stream/coin/{coin_address}` (Server-Sent Events)
 
 Long-lived HTTP connection. The server forwards every price tick from the on-chain pipeline (≈ one batch per Solana block, ~400ms) for the requested coin. Same `read_coins` scope as the rest of the read endpoints.
+
+> **Note on URL.** The streaming endpoint lives on Fasol's WebSocket service so it can share the live-price subscription with the rest of the platform — that's why the path prefix is `/agent_stream/...` instead of `/trading_bot/agent/...`. Same hostname, same Bearer token. Derive the stream base from your API base by stripping `/trading_bot/agent` and appending `/agent_stream` (the helper at `scripts/lib/sse.mjs` does this for you).
 
 **Wire format** — standard SSE:
 
@@ -436,8 +438,10 @@ If the coin migrates while you're connected, the stream **does not break**: the 
 ### Curl example
 
 ```bash
+# Strip /trading_bot/agent from the API base; append /agent_stream/coin/<COIN>.
+STREAM_BASE="${FASOL_API_BASE_URL%/trading_bot/agent}/agent_stream"
 curl -N -H "Authorization: Bearer $FASOL_API_KEY" \
-  "$FASOL_API_BASE_URL/coin/<COIN>/stream"
+  "$STREAM_BASE/coin/<COIN>"
 ```
 
 `-N` disables curl buffering so you see ticks as they arrive.
