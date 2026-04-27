@@ -268,6 +268,70 @@ curl -s -X DELETE \
 
 Cancellation is best-effort: a TP/SL that already triggered (in flight) cannot be cancelled.
 
+### `list_orders` — `GET /orders` (requires `read_positions`)
+
+Every order on the wallet, across all coins. Includes **both armed and sleeping** orders so you can see what's actually queued AND what's lurking from past cycles. Critical for cycle cleanup — see "TP/SL/trailing lifecycle" below.
+
+```bash
+curl -s -H "Authorization: Bearer $FASOL_API_KEY" "$FASOL_API_BASE_URL/orders"
+```
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "id": "ord_abc",
+      "type": "take_profit",
+      "status": "armed",         // armed | sleeping
+      "coin_address": "...",
+      "pair_address": "...",
+      "symbol": "BONK",
+      "trigger_price": "0.0000200",
+      "trigger_p": "50",
+      "sell_p": "100",
+      "bought_sol": "0.1",
+      "bought_coin": "8000000",
+      "coin_balance": "8000000",
+      "source_kind": "agent",     // present if you placed it; absent if user/UI made it
+      "source_id": "3",
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ],
+  "summary": { "total": 7, "armed": 1, "sleeping": 6 }
+}
+```
+
+### `list_coin_orders` — `GET /coin/{coin_address}/orders` (requires `read_positions`)
+
+Same shape, scoped to one coin. Useful before you place new TP/SL on a coin — see what's already there.
+
+```bash
+curl -s -H "Authorization: Bearer $FASOL_API_KEY" \
+  "$FASOL_API_BASE_URL/coin/<COIN>/orders"
+```
+
+### `status` semantics
+
+| `status`    | Meaning                                                                                            |
+|-------------|----------------------------------------------------------------------------------------------------|
+| `armed`     | Watching prices, will fire on next match. `trigger_price` is set.                                  |
+| `sleeping`  | Relative order (TP / SL / trailing) whose `trigger_price` is empty — fired in a past cycle, OR awaiting a future buy. **It will re-arm on the next buy on this coin.** |
+
+`limit_buy` and `limit_sell` are absolute one-shots — they only appear in the list while waiting; gone after they fire.
+
+### `source_kind` / `source_id`
+
+When `place_order` is called via the agent API, the server tags the row with `source_kind: "agent"` + `source_id: <your_agent_id>`. Use this to recognise YOUR orders versus those the user placed in the UI:
+
+- `source_kind === "agent" && source_id === <my_agent_id>` → safe to cancel as part of cleanup
+- `source_kind === "alert"` → from an alert autobuy, do not touch
+- `undefined` → from the user's UI / Telegram bot — **do not cancel without explicit user instruction**
+
+This lets the agent operate alongside human-placed orders without stomping on them.
+
 ---
 
 ## TP/SL/trailing lifecycle — they persist and re-arm
