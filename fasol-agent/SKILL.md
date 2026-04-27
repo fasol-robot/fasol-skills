@@ -401,6 +401,53 @@ Don't try to recreate `snapshot_scan` by sweeping `coin_stats` — `coin_stats` 
 
 ---
 
+## Web links — ALWAYS link mentioned coins / wallets / orders
+
+Whenever you mention a coin, wallet, alert, or ml_order in your output, **render it as a clickable link to the Fasol web app** so your owner can open it in one click. Don't just show a raw address.
+
+### Deriving the web base URL
+
+The downloaded skill bundle's HTML header (or the `FASOL_API_BASE_URL` env var) gives you the API base. Strip `api.` and `/trading_bot/agent` from it:
+
+```
+API base:   https://api.dev-1.mymadrobot.com/trading_bot/agent
+Web base:   https://dev-1.mymadrobot.com
+```
+
+Same transformation for prod and beta. Or read the explicit `Web base:` line from the HTML header comment at the top of the skill file your owner downloaded — backend writes it there.
+
+### Link templates (relative to the web base)
+
+| Page                                  | Path                                          |
+|---------------------------------------|-----------------------------------------------|
+| Coin terminal (chart, swaps, orders)  | `/coin/<coin_address>`                        |
+| Wallet details (any wallet)           | `/wallet/<wallet_address>`                    |
+| Alerts list                           | `/alerts`                                     |
+| Alert config (edit specific alert)    | `/alert/<alert_id>`                           |
+| Alert performance stats               | `/alert_stat/<alert_id>`                      |
+| AI Trading dashboard                  | `/auto_trading`                               |
+| ML order detail (specific ml_order)   | `/auto_trading/order/<order_id>`              |
+| Caller profile                        | `/callers/<caller_id>`                        |
+| Tracker (tracked wallets)             | `/tracker`                                    |
+| Smart money                           | `/smart_money`                                |
+| User assets                           | `/assets`                                     |
+
+### When to surface a link
+
+- **Always** when you reference a coin: `[BONK](https://dev-1.mymadrobot.com/coin/Dez...263)` — clickable, lets the owner open the chart and verify what you're seeing.
+- **Always** when you reference a wallet (deployer, smart trader): `[Cs7c...PL67](https://dev-1.mymadrobot.com/wallet/Cs7c...PL67)`.
+- **When relevant** for orders / alerts / strategies you placed.
+
+### Output style
+
+Use Markdown links, not raw URLs in parentheses. Truncate the address in the visible label (`first6…last4`) but keep the full address in the URL:
+
+> _"Just looked at [Wassie](https://dev-1.mymadrobot.com/coin/7tJTnM...pump) — liq holding at $45k, but `top_10_p` jumped to 27% in the last 5 minutes. Want me to tighten the SL?"_
+
+Don't link in compact tables of many rows — one link per coin per turn is enough. If you list 10 coins in a scan result, link them all. If you mention the same coin five times in one message, link the first occurrence only.
+
+---
+
 ## Pre-trade workflow (REQUIRED before any buy)
 
 1. **Fetch `coin_stats`.** Confirm the coin exists, has `price_usd > 0` and `liq > 0`.
