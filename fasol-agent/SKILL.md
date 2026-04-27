@@ -240,6 +240,137 @@ Cancellation is best-effort: a TP/SL that already triggered (in flight) cannot b
 
 ---
 
+## Snapshot tools (historical state) — all require `read_coins`
+
+`coin_stats` gives you the **current** state of a coin. The four snapshot endpoints below let you query its **historical** state — every snapshot the platform has saved while the coin was actively trading.
+
+### What `db.coin_snapshot` is
+
+Every active trading pair gets a snapshot row roughly every block it transacts in (≈ tick-level, but only when there is activity and `liq > 5 SOL`). Each row carries the same ~40 numeric fields you see in `coin_stats` — `price_usd`, `mc`, `liq`, `vol_5m`, `holders`, `top_10_p`, `dev_hold_p`, `drop_from_ath_p`, `bot_traders_count`, `dev_pf_migrated_count`, etc. — at the moment that snapshot was captured.
+
+Use these tools to answer questions like:
+- *"Show me the trajectory of BONK over the last hour."*
+- *"What was BONK's max market cap during the past 6 hours?"*
+- *"When did BONK first cross 1M market cap?"*
+- *"Which coins right now have liq > $50k, mc < $500k, dev_hold_p < 5%?"*
+
+**Hard limits to know:**
+- All four endpoints cap the time window at **24 hours**. Wider requests return `400 window_exceeds_24h_cap`.
+- `/scan` requires at least one filter (it would otherwise read every active coin). Returns `400 filter_required` if you forget.
+- Filter keys outside the whitelist (see `/scan` body shape below) are silently dropped — there's no SQL injection vector, but also no escape hatch. Stick to the documented set.
+
+### `snapshot_history` — `GET /snapshot/coin/{coin_address}/history`
+
+Time-series for ONE coin. Server auto-buckets so you always get ≤1000 rows; the bucket size widens with the window.
+
+```bash
+curl -s -G \
+  -H "Authorization: Bearer $FASOL_API_KEY" \
+  --data-urlencode "from=2026-04-27T08:00:00Z" \
+  --data-urlencode "to=2026-04-27T09:00:00Z" \
+  "$FASOL_API_BASE_URL/snapshot/coin/<COIN>/history"
+```
+
+Defaults: `to = now`, `from = now − 1h`. Returns `{ coin_address, from, to, bucket_seconds, rows: [{ ts, price_usd, mc, liq, holders, vol_5m, top_10_p, drop_from_ath_p }] }`.
+
+### `snapshot_agg` — `GET /snapshot/coin/{coin_address}/agg`
+
+Min/max/count over a window for ONE coin. Single-row reply, very cheap.
+
+```bash
+curl -s -G \
+  -H "Authorization: Bearer $FASOL_API_KEY" \
+  --data-urlencode "from=2026-04-27T00:00:00Z" \
+  --data-urlencode "to=2026-04-27T12:00:00Z" \
+  "$FASOL_API_BASE_URL/snapshot/coin/<COIN>/agg"
+```
+
+Returns `{ snapshot_count, min_price, max_price, min_mc, max_mc, min_liq, max_liq, max_holders, max_vol_5m, min_drop_from_ath_p, max_drop_from_ath_p }`.
+
+### `snapshot_first_match` — `POST /snapshot/coin/{coin_address}/first_match`
+
+Find the **first** (or **last**) snapshot in the window where ALL given filters hold. At least one filter is required.
+
+```bash
+curl -s -X POST \
+  -H "Authorization: Bearer $FASOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "2026-04-27T00:00:00Z",
+    "to":   "2026-04-27T12:00:00Z",
+    "direction": "first",
+    "filters": { "min_mc": 1000000, "max_drop_from_ath_p": 50 }
+  }' \
+  "$FASOL_API_BASE_URL/snapshot/coin/<COIN>/first_match"
+```
+
+`direction` is `"first"` (default) or `"last"`. Returns the matching snapshot row or `match: null` if nothing qualifies in the window.
+
+### `snapshot_scan` — `POST /snapshot/scan`
+
+"Find me the coins in state X right now (or at moment T)." For each coin we take its freshest snapshot within a 5-minute lookback and apply your filters.
+
+```bash
+curl -s -X POST \
+  -H "Authorization: Bearer $FASOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "at": "now",
+    "filters": {
+      "min_liq": 50000,
+      "max_mc": 500000,
+      "max_dev_hold_p": 5,
+      "is_migrated": true,
+      "launchpad": "pf"
+    },
+    "sort":  "liq desc",
+    "limit": 50
+  }' \
+  "$FASOL_API_BASE_URL/snapshot/scan"
+```
+
+`at` may be `"now"` (default) or an ISO timestamp within the last 24 hours. `limit` ≤ 100. Returns the matching snapshot rows ordered by `sort`.
+
+#### Filter whitelist (use these keys verbatim in the `filters` object)
+
+Numeric (min/max variants):
+`min_mc / max_mc`,
+`min_liq / max_liq`,
+`min_vol_5m / max_vol_5m`,
+`min_holders / max_holders`,
+`min_makers_5m`,
+`max_top_10_p`,
+`max_dev_hold_p`,
+`max_snipers_hold_p`,
+`max_bundlers_hold_p`,
+`min_drop_from_ath_p / max_drop_from_ath_p`,
+`min_dev_pf_migrated_p`,
+`min_dev_pf_migrated_count`,
+`min_coin_age_sec / max_coin_age_sec`,
+`min_buy_tx`,
+`min_tx_count`.
+
+Boolean: `is_migrated`, `with_socials`, `dex_paid`, `is_mayhem_mode`, `is_cashback_coin`.
+
+String: `launchpad` (one of `pf`, `rl`, `letsbonk`, `believe`, `bags`, `moonshot`, `jupstudio`, `dbc`, `mayhem`, `heaven`).
+
+#### Sort whitelist (use in `sort` field)
+
+`mc`, `liq`, `vol_5m`, `holders`, `drop_from_ath_p`, `coin_age_sec`, `snapshot_date` — each with optional `asc` / `desc` (default `desc`).
+
+### When to use which
+
+| You want…                                           | Use                          |
+|-----------------------------------------------------|------------------------------|
+| The trajectory of one coin to draw a chart          | `snapshot_history`           |
+| Min/max/extremes of one coin in a window            | `snapshot_agg`               |
+| When a condition first / last held for one coin     | `snapshot_first_match`       |
+| Coins that match a state right now or at moment T   | `snapshot_scan`              |
+
+Don't try to recreate `snapshot_scan` by sweeping `coin_stats` — `coin_stats` is one coin at a time, and `snapshot_scan` does the same job in one bounded query.
+
+---
+
 ## Pre-trade workflow (REQUIRED before any buy)
 
 1. **Fetch `coin_stats`.** Confirm the coin exists, has `price_usd > 0` and `liq > 0`.
