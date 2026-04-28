@@ -214,6 +214,75 @@ curl -s -H "Authorization: Bearer $FASOL_API_KEY" \
 
 Deployer's last 50 tokens + summary stats (`launched_count`, `migrated_count`, `migrated_p`, recent ATH averages).
 
+### `swap` — `POST /swap` (requires `place_orders`) — INSTANT market trade
+
+Two trading primitives — **read this distinction carefully:**
+
+| Primitive | Endpoint | Fires | When to use |
+|---|---|---|---|
+| **Instant swap** | `POST /swap` | NOW, at current price | "buy 0.1 SOL of this coin", copy-trade, exit positions, kill switch |
+| **Waiting order** | `POST /orders` | Later, when price meets a trigger | limit entries, TP / SL / trailing exits |
+
+The orders engine is **trigger-based** — it watches prices and fires a swap when `price <= trigger` (for buys / SL) or `price >= trigger` (for sells / TP). It cannot satisfy "buy NOW at any reasonable price" semantics; trying `trigger_price: "0"` on a `limit_sell` will **never fire** because the price never gets to zero.
+
+For instant entry / exit you use `POST /swap`.
+
+```http
+POST /swap
+Content-Type: application/json
+```
+
+**Body shapes:**
+
+```json
+// Instant buy
+{ "direction": "buy",  "coin_address": "...", "amount_sol": "0.1" }
+
+// Instant sell — sell_p is % of current position (1..100)
+{ "direction": "sell", "coin_address": "...", "sell_p": "100" }
+```
+
+```bash
+curl -s -X POST \
+  -H "Authorization: Bearer $FASOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"direction":"buy","coin_address":"<COIN>","amount_sol":"0.1"}' \
+  "$FASOL_API_BASE_URL/swap"
+```
+
+**Response** (immediate — the tx is fire-and-forget):
+
+```json
+{
+  "data": {
+    "ok": true,
+    "direction": "buy",
+    "coin_address": "...",
+    "pair_address": "...",
+    "note": "tx submitted; subscribe to /agent_stream/tx for fill confirmation"
+  }
+}
+```
+
+The tx is published to fasol_core for chain submission. To learn the actual fill price, slippage, and tx hash, you must:
+
+- subscribe to `tx_stream` (recommended for active strategies — sub-second event), OR
+- poll `list_trades` after a few seconds (cheaper, OK for slow loops)
+
+The trade appears in `list_trades` with `tx_type: "agent_swap"` so it's distinguishable from order-fired trades and user UI trades.
+
+**Pairs naturally with TP/SL setup:**
+
+```
+1. POST /swap   { direction: "buy",  coin_address, amount_sol: "0.1" }     → buys NOW
+2. POST /orders { type: "take_profit", coin_address, trigger_p: "50",  sell_p: "100" }
+3. POST /orders { type: "stop_loss",   coin_address, trigger_p: "-20", sell_p: "100" }
+```
+
+The TP/SL queue immediately and arm against the actual entry price once the buy from step 1 confirms.
+
+**No slippage param yet:** the swap uses fasol_core's default slippage handling. If your strategy needs explicit slippage / priority-fee control, raise it as a feature request.
+
 ### `place_order` — requires `place_orders`
 
 ```http

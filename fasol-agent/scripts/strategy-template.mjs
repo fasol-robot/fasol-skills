@@ -58,10 +58,11 @@ const CONFIG = {
 //
 // Output (one of):
 //   { kind: "wait" }
-//   { kind: "buy",    trigger_price: "0.0000110", amount_sol: "0.1" }    // limit_buy
-//   { kind: "tp_sl",  take_profit_p: "40", stop_loss_p: "-20" }          // arm exits
-//   { kind: "sell",   sell_p: "100", reason: "vol_collapse" }            // market sell
-//   { kind: "stop",   reason: "time_limit" }                             // exit script
+//   { kind: "buy",      trigger_price: "0.0000110", amount_sol: "0.1" }    // waiting limit_buy
+//   { kind: "swap_buy", amount_sol: "0.1" }                                // instant market buy NOW
+//   { kind: "tp_sl",    take_profit_p: "40", stop_loss_p: "-20" }          // arm exits
+//   { kind: "sell",     sell_p: "100", reason: "vol_collapse" }            // instant market sell
+//   { kind: "stop",     reason: "time_limit" }                             // exit script
 function decide(ctx) {
   const { coin, position, runtime_min } = ctx;
 
@@ -225,14 +226,32 @@ const applyAction = async (action) => {
 
     case "sell": {
       log("market_sell", { sell_p: action.sell_p, reason: action.reason });
-      // Use limit_sell at trigger 0 = sell at any price (i.e. market).
-      await safeCall("place_order/market_sell", () =>
-        api("POST", "/orders", {
+      // POST /agent/swap is the instant-market primitive — order engine is
+      // trigger-based and can't satisfy "sell NOW". Tx fires through the
+      // same pipeline the user terminal uses; subscribe to /agent_stream/tx
+      // (or list_trades after the fact) to confirm fill.
+      await safeCall("swap/sell", () =>
+        api("POST", "/swap", {
           body: {
-            type: "limit_sell",
+            direction: "sell",
             coin_address: CONFIG.coin_address,
-            trigger_price: "0",
             sell_p: action.sell_p,
+          },
+        }),
+      );
+      lastActionTs = Date.now();
+      return;
+    }
+
+    case "swap_buy": {
+      // Instant market buy — bypasses the trigger-based order engine.
+      log("market_buy", { amount_sol: action.amount_sol });
+      await safeCall("swap/buy", () =>
+        api("POST", "/swap", {
+          body: {
+            direction: "buy",
+            coin_address: CONFIG.coin_address,
+            amount_sol: action.amount_sol,
           },
         }),
       );
