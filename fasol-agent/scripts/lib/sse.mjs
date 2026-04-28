@@ -148,6 +148,19 @@ export function subscribeCoinTradeStream(coinAddress, opts = {}) {
   return streamSSE(`${STREAM_BASE}/coin/${coinAddress}/trades`, opts);
 }
 
+/**
+ * Subscribe to live trades from the user's tracked wallets. Yields:
+ *   { event: "ready",          data: {...} }     once on connect
+ *   { event: "tracked_trade",  data: { user_id, trade } }  on each swap
+ *
+ * `trade` is the same LiveTrade shape — useful when you want the agent to
+ * react to what specific wallets the user is following are doing (smart
+ * money, devs, etc.).
+ */
+export function subscribeTrackedWalletTradeStream(opts = {}) {
+  return streamSSE(`${STREAM_BASE}/tracked_wallet_trades`, opts);
+}
+
 // Parse one SSE block (already split on \n\n). Returns { event, data } or null.
 function parseSseBlock(block) {
   let event = "message";

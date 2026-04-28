@@ -454,6 +454,113 @@ curl -s -H "Authorization: Bearer $FASOL_API_KEY" "$FASOL_API_BASE_URL/wallet_ba
 
 ---
 
+## Wallet tracking — follow other wallets and react to their trades
+
+Your owner can track other Solana wallets — their devs, smart-money traders, friends, whatever — and have every swap those wallets make stream into the platform. The agent has full read/write access to that tracking list (under the `manage_tracking` scope) plus a live SSE feed of the trades.
+
+### Manage groups + wallets (HTTP)
+
+| Endpoint                             | Purpose                                           |
+|--------------------------------------|---------------------------------------------------|
+| `GET    /wallet_groups`              | List the user's wallet groups                     |
+| `POST   /wallet_groups`              | Create a group: `{ name, color? }`                 |
+| `PUT    /wallet_groups/:id`          | Rename / re-colour a group                        |
+| `DELETE /wallet_groups/:id`          | Delete a group (its wallets become ungrouped)     |
+| `GET    /tracked_wallets`            | List every tracked wallet for the user            |
+| `POST   /tracked_wallets`            | Add wallet(s): `{ wallets: [{ wallet, group_id?, name?, notify? }] }` |
+| `PUT    /tracked_wallets/:wallet`    | Update one wallet's group / name / notify flag    |
+| `DELETE /tracked_wallets/:wallet`    | Untrack one wallet                                |
+| `DELETE /tracked_wallets/all`        | Clear the whole tracking list                     |
+| `GET    /tracked_wallets/live_trades`| Recent swaps batch (warm-up before subscribing)   |
+
+All gated by `manage_tracking`. Mirrors the user-facing CRUD the UI uses, so the agent and the UI see the same set in real time.
+
+```bash
+# Add two devs to the "snipers" group:
+curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"wallets":[{"wallet":"Cs7c...","name":"BONK dev"},{"wallet":"3fDu..."}]}' \
+  "$FASOL_API_BASE_URL/tracked_wallets"
+```
+
+### `tracked_wallet_trade_stream` — `GET /agent_stream/tracked_wallet_trades` (`manage_tracking`)
+
+Live SSE feed: every swap from any of the user's tracked wallets, server-filtered by the authenticated user_id (you only see your own list's activity).
+
+```bash
+curl -N -H "Authorization: Bearer $FASOL_API_KEY" \
+  "$STREAM_BASE/tracked_wallet_trades"
+```
+
+**Wire format:**
+
+```
+event: ready
+data: { "user_id": 50772161, "agent_id": 3, "server_time": "..." }
+
+data: {
+  "type": "tracked_trade",
+  "user_id": 50772161,
+  "trade": {
+    "wallet": "Cs7c...",
+    "coin_address": "...",
+    "buy_sell": "buy",
+    "amount_sol": 0.42,
+    "amount_coin": 1234567,
+    "price_usd": "0.0000123",
+    "date": 1745779200123,
+    "trade_type": "...",
+    "pnl_sol": 0, "pnl_percent": 0,
+    "in_sol": 0.5, "out_sol": 0.0,
+    "coin_balance": 1234567,
+    "buy_count": 1, "sell_count": 0
+    // ... full LiveTrade
+  }
+}
+
+: heartbeat
+```
+
+### Worked example — copy-trade a smart-money wallet
+
+```js
+import { subscribeTrackedWalletTradeStream } from "./lib/sse.mjs";
+
+const SMART_WALLET = "Cs7c...";  // already added to tracked_wallets
+const COPY_RATIO = 0.1;           // copy 10% of their size
+
+for await (const evt of subscribeTrackedWalletTradeStream()) {
+  if (evt.event !== "tracked_trade") continue;
+  const t = evt.data.trade;
+  if (t.wallet !== SMART_WALLET) continue;       // multiple wallets in your list — narrow client-side
+  if (t.buy_sell !== "buy") continue;            // only mirror their buys
+  const amount_sol = (t.amount_sol * COPY_RATIO).toFixed(4);
+
+  // Optional sanity check — fetch coin_stats first, present pre-buy confirmation.
+  // Then place the limit_buy at current price (or slight above for slippage).
+  await api("POST", "/orders", {
+    body: {
+      type: "limit_buy",
+      coin_address: t.coin_address,
+      trigger_price: t.price_usd,
+      amount_sol,
+    },
+  });
+}
+```
+
+### When to use
+
+| Pattern                                           | Use                                  |
+|---------------------------------------------------|--------------------------------------|
+| Watch one wallet for buy signals (copy-trade)     | `tracked_wallet_trade_stream`        |
+| Detect dev sells on coins you hold                | `tracked_wallet_trade_stream` + filter to deployer wallets |
+| Catch up on what tracked wallets did while offline | `GET /tracked_wallets/live_trades`   |
+| Manage the watch list itself                      | `wallet_groups` / `tracked_wallets` CRUD |
+
+The stream is a per-user feed: subscribe once, see every wallet on the user's list. Filter by `wallet` / `coin_address` / `buy_sell` client-side per your strategy.
+
+---
+
 ## TP/SL/trailing lifecycle — they persist and re-arm
 
 > **⚠️ Critical for strategy authors:** when a `take_profit`, `stop_loss`, or `trailing` order **fires** (the sell executes), the order entity is **NOT deleted** — it just becomes deactivated/sleeping. Crucially, **the next time a position opens on the same coin, the order re-arms** with a fresh `trigger_price` computed against the new entry.
