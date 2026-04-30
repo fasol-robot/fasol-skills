@@ -161,6 +161,21 @@ export function subscribeTrackedWalletTradeStream(opts = {}) {
   return streamSSE(`${STREAM_BASE}/tracked_wallet_trades`, opts);
 }
 
+/**
+ * Subscribe to the user's alert pipeline. Yields:
+ *   { event: "ready",            data: {...} }     once on connect
+ *   { event: "alert_match",      data: { alert_id, alert_name, coin, trigger_price, timestamp } }
+ *   { event: "alert_milestone",  data: { alert_id, coin, multiplier, baseline_price, current_price, timestamp, alert_timestamp } }
+ *
+ * Optional `alert_id` narrows the stream to one alert server-side.
+ */
+export function subscribeAlertMatchStream({ alert_id, signal } = {}) {
+  const url = alert_id != null
+    ? `${STREAM_BASE}/alert_matches?alert_id=${encodeURIComponent(alert_id)}`
+    : `${STREAM_BASE}/alert_matches`;
+  return streamSSE(url, { signal });
+}
+
 // Parse one SSE block (already split on \n\n). Returns { event, data } or null.
 function parseSseBlock(block) {
   let event = "message";

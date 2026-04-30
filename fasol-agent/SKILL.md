@@ -396,7 +396,7 @@ curl -s -H "Authorization: Bearer $FASOL_API_KEY" \
 When `place_order` is called via the agent API, the server tags the row with `source_kind: "agent"` + `source_id: <your_agent_id>`. Use this to recognise YOUR orders versus those the user placed in the UI:
 
 - `source_kind === "agent" && source_id === <my_agent_id>` → safe to cancel as part of cleanup
-- `source_kind === "alert"` → from an alert autobuy, do not touch
+- `source_kind === "alert"` → from an alert autobuy. `source_id` is the `alert_id`. **With** the `manage_alerts` scope you may treat these as your own (the user explicitly granted alert lifecycle to you); **without** it, leave them alone — the user manages those positions via UI / Telegram.
 - `undefined` → from the user's UI / Telegram bot — **do not cancel without explicit user instruction**
 
 This lets the agent operate alongside human-placed orders without stomping on them.
@@ -627,6 +627,178 @@ for await (const evt of subscribeTrackedWalletTradeStream()) {
 | Manage the watch list itself                      | `wallet_groups` / `tracked_wallets` CRUD |
 
 The stream is a per-user feed: subscribe once, see every wallet on the user's list. Filter by `wallet` / `coin_address` / `buy_sell` client-side per your strategy.
+
+---
+
+## Alerts — react to coins matching the user's filters
+
+Your owner can configure alerts that match Solana memecoins by launchpad / market cap / volume / holders / dev metrics / etc. When a coin matches, the alert pipeline publishes an event (the same event the Telegram alerts bot consumes) and optionally fires an autobuy.
+
+You have:
+- **Read** — list alerts, per-alert hit-rate stats, triggered history per coin (gated by `read_alerts`)
+- **Write** — full CRUD + pause + autobuy config + Telegram-notification toggle (gated by `manage_alerts`, **not default-on** — your owner must explicitly grant it)
+- **Stream** — live SSE of every match + every milestone the user's alerts produce (gated by `read_alerts`)
+
+### Read endpoints
+
+| Endpoint                                       | Purpose                                                               |
+|------------------------------------------------|-----------------------------------------------------------------------|
+| `GET /alerts`                                  | List the user's alerts with `triggered_count` + hit-rate stats        |
+| `GET /alert/{alert_id}/stats`                  | Drill-down: every coin that matched this alert + multipliers reached  |
+| `GET /alerts/triggered/{coin_address}`         | Which of the user's alerts matched this coin (chart-marker data)      |
+
+```bash
+curl -s -H "Authorization: Bearer $FASOL_API_KEY" "$FASOL_API_BASE_URL/alerts"
+```
+
+`triggered_count` counts distinct coins that have matched **since `config_updated_at`** (filter changes reset history). `stat_*` fields (`hit_1_5x_pct`, `hit_2x_pct`, `hit_5x_pct`, `hit_10x_pct`) are aggregate post-match price-multiplier hit rates — null when there are zero matches in window.
+
+### Write endpoints (require `manage_alerts`)
+
+| Method   | Endpoint                                  | Purpose                                                                    |
+|----------|-------------------------------------------|----------------------------------------------------------------------------|
+| `POST`   | `/alerts`                                 | Create alert. Body = full `AlertUpsertData` (filters etc.) — see below.    |
+| `PUT`    | `/alert/{alert_id}`                       | Update alert. Same body shape as create. Filter change clears CH history.  |
+| `DELETE` | `/alert/{alert_id}`                       | Delete alert and its match history.                                        |
+| `POST`   | `/alert/{alert_id}/pause`                 | Pause (`is_paused=true`). Empty body. Idempotent.                          |
+| `POST`   | `/alert/{alert_id}/unpause`               | Unpause (`is_paused=false`). Empty body. Idempotent.                       |
+| `POST`   | `/alert/{alert_id}/toggle-telegram`       | Flip `should_send_tg` (TG notification on/off). Empty body.                |
+| `POST`   | `/alert/{alert_id}/autobuy`               | Set autobuy config (see body shape below). Pass `null` / `0` to disable.   |
+
+#### `AlertUpsertData` body (create / update)
+
+```jsonc
+{
+  "name": "Migrated + dev sold",
+  "launchpads": ["pumpfun", "raydium"],         // at least 1 launchpad required
+  "booleanFilters": ["only_migrated", "with_socials", "dex_paid"],
+  "minMaxFilters": {                            // any subset; nulls allowed
+    "min_mc_usd": 50000, "max_mc_usd": 1000000,
+    "min_vol_5m_usd": 10000,
+    "min_holders": 200,
+    "max_dev_hold_p": 5
+    // see /alerts UI for the full filter list — same keys
+  },
+  "milestones": [1.5, 2, 5, 10],                // multipliers tracked after match (default if omitted)
+  "is_paused": false,
+  "chat_id": null,                              // null = DM the bot owner
+  // Autobuy fields (optional — fire-and-forget buys when alert matches):
+  "autobuy_amount": 0.05,                       // SOL per match; null/0 disables
+  "autobuy_orders": [                           // optional: TP / SL / trailing arms after the buy
+    { "type": "take_profit", "trigger_p": 50,  "sell_p": 100 },
+    { "type": "stop_loss",   "trigger_p": -25, "sell_p": 100 }
+  ],
+  "ab_fee": 0.001,
+  "ab_slip": 0.5,
+  "ab_jito_on": false
+}
+```
+
+Server enforces: `name` non-empty, ≥1 launchpad, valid `booleanFilters` strings, sufficient SOL balance when `autobuy_amount > 0`. Returns the saved row (`{ data: alert }`).
+
+#### Pause / autobuy shims
+
+Pause and autobuy have dedicated endpoints so you don't have to round-trip the full filter config to flip a boolean or change a buy size:
+
+```bash
+# Pause an alert
+curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" \
+  "$FASOL_API_BASE_URL/alert/123/pause"
+
+# Set autobuy size + TP+SL
+curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"autobuy_amount":0.05,"autobuy_orders":[{"type":"take_profit","trigger_p":50,"sell_p":100}]}' \
+  "$FASOL_API_BASE_URL/alert/123/autobuy"
+
+# Disable autobuy (preserves the rest of the alert)
+curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"autobuy_amount":null,"autobuy_orders":null}' \
+  "$FASOL_API_BASE_URL/alert/123/autobuy"
+```
+
+### `alert_match_stream` — `GET /agent_stream/alert_matches[?alert_id=<id>]` (`read_alerts`)
+
+Live SSE of two event types from the user's alert pipeline:
+
+- `event: alert_match` — a coin matched the alert filters (the same event Telegram receives).
+- `event: alert_milestone` — a coin that previously matched has now hit a multiplier target (1.5x, 2x, 5x, 10x by default).
+
+Optional `?alert_id=` narrows the stream to one alert.
+
+```bash
+curl -N -H "Authorization: Bearer $FASOL_API_KEY" "$STREAM_BASE/alert_matches"
+```
+
+**Wire format:**
+
+```
+event: ready
+data: { "user_id": 50772161, "agent_id": 3, "alert_filter": null, "server_time": "..." }
+
+event: alert_match
+data: {
+  "alert_id": 123,
+  "alert_name": "Migrated + dev sold",
+  "coin": { "coin_address": "...", "symbol": "...", "price_usd": "...", /* full CoinStat */ },
+  "trigger_price": 0.0000123,
+  "timestamp": 1745779200123
+}
+
+event: alert_milestone
+data: {
+  "alert_id": 123,
+  "coin": { /* CoinStat */ },
+  "multiplier": 2,
+  "baseline_price": 0.0000123,
+  "current_price": 0.0000247,
+  "timestamp": 1745779260000,
+  "alert_timestamp": 1745779200123
+}
+
+: heartbeat
+```
+
+The stream filters server-side by your owner's `user_id` — you only see their own alerts. Telegram-delivery fields (`chat_id`, `should_send_tg`) are stripped from the payload; the agent doesn't need them.
+
+### Worked example — react to alert matches without autobuy
+
+```js
+import { subscribeAlertMatchStream } from "./lib/sse.mjs"; // helper to add
+
+for await (const evt of subscribeAlertMatchStream()) {
+  if (evt.event === "alert_match") {
+    const { alert_id, alert_name, coin, trigger_price } = evt.data;
+    // Pull a fresh stats snapshot, decide whether to enter:
+    const stats = await api("GET", `/coin/${coin.coin_address}/stats`);
+    if (looksGood(stats)) {
+      await api("POST", "/swap", { body: {
+        direction: "buy", coin_address: coin.coin_address, amount_sol: 0.05,
+      }});
+      // Then arm TP/SL via /orders.
+    }
+  }
+  if (evt.event === "alert_milestone") {
+    // Coin moved Nx since match — maybe trim the position.
+  }
+}
+```
+
+### When to use what
+
+| Pattern                                                | Use                                                      |
+|--------------------------------------------------------|----------------------------------------------------------|
+| Mirror the TG-bot match feed in your strategy          | `alert_match_stream`                                     |
+| Trade the alert's autobuy yourself instead of platform | `alert_match_stream` + `swap` + `place_order` (TP/SL)    |
+| Let platform autobuy fire and you only manage exits    | Set `autobuy_amount` via `/alert/:id/autobuy`            |
+| Pause a noisy alert mid-run                            | `POST /alert/:id/pause`                                  |
+| Tune filters without losing all match history          | Don't change filters — only update `name` / `chat_id`. Filter changes wipe CH history per server logic. |
+
+### Lifecycle gotchas
+
+- **Filter change clears match history.** `PUT /alert/:id` with a different `booleanFilters` / `launchpads` / `minMaxFilters` triggers `clearAlertHistory(alert_id)` server-side. `triggered_count` resets and `stat_*` go null until new matches accumulate.
+- **Autobuy positions tag `source_kind: "alert"` + `source_id: <alert_id>`.** With `manage_alerts` scope you may treat them as yours (cancel TP/SL, exit early, etc.) — without it, don't touch.
+- **Match dedup is in-memory in REDIS_STAT.** A coin matches an alert at most once per match-window per the platform's alert pipeline (see fasol_services REDIS_STAT). You won't get duplicate `alert_match` events for the same `(alert, coin)` pair on hot pumpfun coins.
+- **Milestones are post-match.** No match = no milestones. After a match, milestones fire when the coin breaches each multiplier (default `[1.5, 2, 5, 10]`; configurable per alert via `data.milestones`).
 
 ---
 
@@ -1417,6 +1589,7 @@ export FASOL_API_KEY="fsl_live_..."
 node scripts/get-scope.mjs
 node scripts/coin-stats.mjs <coin>
 node scripts/list-positions.mjs
+node scripts/list-alerts.mjs
 node scripts/place-order.mjs limit_buy --coin <addr> --trigger-price 0.0000123 --amount-sol 0.1
 node scripts/cancel-order.mjs <order_id> --coin <addr>
 ```
