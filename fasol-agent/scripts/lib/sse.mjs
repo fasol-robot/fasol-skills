@@ -176,6 +176,50 @@ export function subscribeAlertMatchStream({ alert_id, signal } = {}) {
   return streamSSE(url, { signal });
 }
 
+/**
+ * Wrap any of the `subscribe*` generators with a periodic force-reconnect.
+ *
+ * Why: long-lived SSE connections to `tracked_wallet_trade_stream` (and
+ * occasionally other streams) silently stop delivering events while the
+ * 15s heartbeat keeps coming. A fresh connection on the same key gets
+ * events within seconds — so we abort and reopen every `intervalMs`.
+ *
+ * Yields the same `{ event, data }` items as the wrapped generator. On
+ * each interval boundary, the inner generator's AbortController fires and
+ * the outer loop creates a new one. Returns when the caller's `signal`
+ * fires.
+ *
+ * Usage:
+ *   for await (const evt of withReconnect(
+ *     (s) => subscribeTrackedWalletTradeStream({ signal: s }),
+ *   )) { ... }
+ */
+export async function* withReconnect(makeStream, { intervalMs = 4 * 60_000, signal: outerSignal } = {}) {
+  while (!outerSignal?.aborted) {
+    const inner = new AbortController();
+    const onAbort = () => inner.abort();
+    outerSignal?.addEventListener("abort", onAbort, { once: true });
+    const timer = setTimeout(() => inner.abort(), intervalMs);
+    try {
+      for await (const evt of makeStream(inner.signal)) {
+        yield evt;
+      }
+    } catch (err) {
+      // AbortError from the timer firing is expected — reconnect.
+      if (inner.signal.aborted && !outerSignal?.aborted) {
+        // intentional refresh — fall through to next iteration
+      } else if (outerSignal?.aborted) {
+        return;
+      } else {
+        throw err;
+      }
+    } finally {
+      clearTimeout(timer);
+      outerSignal?.removeEventListener("abort", onAbort);
+    }
+  }
+}
+
 // Parse one SSE block (already split on \n\n). Returns { event, data } or null.
 function parseSseBlock(block) {
   let event = "message";

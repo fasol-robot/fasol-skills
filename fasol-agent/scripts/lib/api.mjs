@@ -80,6 +80,34 @@ export const printJson = (obj) => {
   process.stdout.write(JSON.stringify(obj, null, 2) + "\n");
 };
 
+/**
+ * Fire an instant `/swap` and surface body-level errors as exceptions.
+ *
+ * The /swap endpoint returns `200 OK` even on functional failures — the
+ * failure shows up as `{ "error": "<reason>" }` instead of `{ "data": {...} }`.
+ * Common reasons:
+ *   - "slip"             — price moved more than slippage_p tolerance
+ *   - "no_coin_balance"  — sell on a coin you don't actually hold
+ *   - "coin_not_found"   — pair not yet indexed (ultra-fresh coins)
+ *
+ * Plain `api()` would happily return the error body as if it were data and
+ * the caller would mistakenly treat the swap as successful. This wrapper
+ * throws so the caller's catch can decide (drop phantom position, log, retry).
+ *
+ * Body shape:
+ *   { direction: "buy" | "sell", coin_address, amount_sol?, sell_p?, slippage_p? }
+ */
+export const swap = async (body) => {
+  const r = await api("POST", "/swap", { body });
+  if (r?.error || r?.error_text) {
+    const err = new Error(`swap_${body.direction}_${r.error || r.error_text}`);
+    err.swapError = r.error || r.error_text;
+    err.body = r;
+    throw err;
+  }
+  return r.data;
+};
+
 // Tiny CLI flag parser — keeps scripts dependency-free. Supports
 // `--flag=value` and `--flag value`. Positional args are returned in order.
 export const parseArgs = (argv) => {

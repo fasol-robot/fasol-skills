@@ -297,7 +297,17 @@ The trade appears in `list_trades` with `tx_type: "agent_swap"` so it's distingu
 
 The TP/SL queue immediately and arm against the actual entry price once the buy from step 1 confirms.
 
-**Slippage:** `slippage_p` (0..100) caps the max slippage; the swap is rejected on-chain if the price moved more than that. Omit to use the user's saved `b_slip` / `s_slip` defaults. Priority fee is not yet exposed — raise as a feature request if your strategy needs it.
+**Slippage:** `slippage_p` (0..100) caps the max slippage; the swap is rejected on-chain if the price moved more than that. Omit to use the user's saved `b_slip` / `s_slip` defaults (typically ~15). For copy-trading MEV/fast wallets the default is too tight — set `slippage_p: "100"` if you'd rather fill at a worse price than not fill at all. Priority fee is not yet exposed — raise as a feature request if your strategy needs it.
+
+**Failure modes — must check the response body, not just the HTTP status.** `/swap` returns `200 OK` even when the swap could not execute; the failure shows up as `{ "error": "<reason>" }` instead of `{ "data": {...} }`. Common reasons:
+
+| Body | Meaning |
+|---|---|
+| `{"error":"slip"}` | Price moved more than `slippage_p` between submit and on-chain confirm. Buy never settles; nothing in the wallet. |
+| `{"error":"no_coin_balance"}` | Sell submitted on a coin you don't actually hold (race: SSE sell event arrived before our buy confirmed; or the prior buy got `slip`'d). |
+| `{"error":"coin_not_found"}` | Pair not yet indexed by the platform — typical for ultra-fresh coins (mc < $200) where SSE buy event arrives before the coin row is loaded. |
+
+**Always** check `response.error` before treating a `/swap` call as successful. A bot that doesn't will accumulate phantom positions (`positions[coin]` set locally but no actual on-chain holding) and break further mirror logic.
 
 ### `place_order` — requires `place_orders`
 
@@ -483,9 +493,10 @@ Query params (all optional):
   - `limit_buy` / `limit_sell` — Fasol orders engine fired the trade
   - `take_profit` / `stop_loss` / `trailing` — relative-order fires (these are sells)
   - `ml_buy` / `ml_sell` — fired from an ml_order strategy
+  - `agent_swap` — instant `/swap` you fired (see below)
   - `qb` / `terminal` — manual user trade (UI / Telegram quick-buy)
 - **`order_id`**: id of the order that fired (orders engine row, OR ml_order id). **Null** for manual trades. Cross-reference with `list_orders` if you want to know what was configured.
-- **`source_kind` / `source_id`**: same ownership tags as on orders — `"agent"`+`<my_agent_id>` is yours.
+- **`source_kind` / `source_id`**: ownership tags. `"agent"`+`<my_agent_id>` is yours **for orders-engine fires** (limit_buy / TP / SL / trailing). **Caveat: `/swap` trades come back with `source_kind: null` and `source_id: null`** — they don't ride through the orders pipeline. To recognise your own `/swap` output, filter by `tx_type === "agent_swap" && !error_text`. Trying `source_kind === "agent"` for swap-driven bots returns nothing and your reconcile logic will compute `pnl=0`.
 - **`error_text`**: `null` for successful trades, a message for failed ones. Failed trades are **included** so you can see what didn't land.
 - **`price_usd` / `price_sol`**: precomputed at 12dp so you don't divide JS floats. Already accounts for slippage at execution time — this IS the actual fill price.
 - **`amount_usd`**: USD value at execution time. Use it for cycle PnL in USD without a separate price call.
@@ -625,6 +636,18 @@ data: {
 
 **Note on price:** the payload doesn't carry `amount_coin` or `price_usd`. To act on a wallet trade, either fire an instant `/swap` (uses live reserves server-side, no price needed) or call `coin_stats` for the current price snapshot.
 
+**`trade_type` values** — drives copy-trading filter logic; ignore at your peril:
+
+| Value | Meaning | Copy-trading note |
+|---|---|---|
+| `first_buy` | Wallet had 0 of this coin before this swap | **Best entry signal** — mirror these aggressively. |
+| `buy_more` | Wallet adding to existing position | Trader's position is already in motion. Their `pnl_percent` here is cumulative since `first_tx_at` — if it's already +30% the pump is mostly behind you. **Filter out unless `pnl_percent < 10`** (you'd be entering near their average). |
+| `sell_part` | Selling some, still holds | **Exit signal** — the trader is locking profit. Don't wait for `sell_all`; many wallets ride a tail. |
+| `sell_all` | `coin_balance` returns to 0 | Final exit. Mirror immediately. |
+| `sell_air` | Edge case: sell with no buy in window | Rare; treat as a sell. |
+
+**SSE stale-connection bug — force-reconnect every ~4 minutes.** Empirically, a connection alive ~10+ minutes silently stops delivering events while heartbeats keep arriving. A fresh curl on the same key/wallets gets events within seconds. Until backend fixes it: wrap the fetch in an `AbortController` with a 4-minute timeout, on abort restart the loop. Don't trust SSE silence — every long copy-trader run needs this safety net.
+
 ### Worked example — copy-trade a smart-money wallet
 
 ```js
@@ -659,6 +682,74 @@ for await (const evt of subscribeTrackedWalletTradeStream()) {
 | Manage the watch list itself                      | `wallet_groups` / `tracked_wallets` CRUD |
 
 The stream is a per-user feed: subscribe once, see every wallet on the user's list. Filter by `wallet` / `coin_address` / `buy_sell` client-side per your strategy.
+
+### Production copy-trader checklist — what the toy example doesn't tell you
+
+The 20-line example above will lose money on a real account. The full set of guardrails — discovered the hard way over ~10 iterations on a live account — is below. **Implement all of these before running unattended.**
+
+**Wallet selection:**
+
+1. **Pick from `/wallet_search`, not `db.wallet` directly.** Always include `min_balance_sol >= 1` (post-filter) — most "top profit_trader" candidates have 0 SOL because they rotate wallets after profitable runs. Mirroring a drained wallet does nothing.
+2. **Categorise by behavior:** server's `behavior.median_hold_sec` puts each wallet into a bucket — sub-60s holds (MEV / sniper) ride huge pumps but our slippage often eats > their gain; multi-minute holds are saner copy targets. Filter `max_median_hold_sec: 600` for safer mirrors, OR explicitly include MEV wallets and accept volatility.
+3. **Avoid heavy scale-in traders.** A wallet whose `behavior.avg_buys_per_cycle > 3` accumulates over time — by the time the SSE event hits you, they're at +30% on their average. Late entries on accumulated peaks lose hard. Filter `max_avg_buys_per_cycle: 3` (post-filter, currently not implemented — use `cycle_count` and `winning_cycles` ratio as proxy until then).
+
+**Mirror filter:**
+
+4. **Only mirror `first_buy` and low-pnl `buy_more`.** Drop anything with `pnl_percent ≥ 10` — by then the trader is up 10%+ and you'd be entering near their average buy price. The 10% threshold is empirical: at higher pnl the slippage cost typically wipes the remaining upside.
+5. **On their `sell_part`, exit fully — don't wait for `sell_all`.** Many wallets ride a tail; if you wait for the final sell you're often holding past their peak by the time you react.
+
+**Order placement:**
+
+6. **`slippage_p: "100"` for /swap on copy-trade.** Default 15% will silently reject most fast pumps. You're not doing tight VWAP execution, you're trying to fill at all.
+7. **Always check `response.error` on /swap.** Body errors `slip` / `no_coin_balance` come with `200 OK`. A bot that doesn't check leaves phantom positions in local state.
+8. **`drop_phantom_position` on `no_coin_balance` sell error.** If your buy got slip'd but you set `positions[coin]` locally, the next sell will fail with `no_coin_balance` — that's the unambiguous "we don't actually hold it" signal. Clear the local flag immediately so a future `first_buy` on the same coin can re-enter.
+
+**Risk controls:**
+
+9. **Per-wallet adaptive sizing > global.** A global `MAX_LOSS_SOL` killswitch throttles the whole bot when one wallet rugs. Per-wallet: each wallet earns its own size from a tier ladder (e.g. `[0.005, 0.01, 0.02, 0.05]`) — a winner compounds, a loser gets cut. This is what stops one bad apple from sinking a profitable bot.
+10. **Auto-disable losing wallets.** `0W / N≥5L` consecutive cycles → drop the wallet from the source list. Without this, a freshly-rotted wallet bleeds you for hours.
+11. **Hard time-stop.** Mirror logic that depends on the source wallet's sell can stall forever if the trader bag-holds. Set `MAX_HOLD_SEC` (e.g. 1800s) and force-exit anything older.
+12. **Fee floor.** Per-cycle fees on /swap ≈ 0.0006 SOL (gas + fasol_fee). At 0.001 SOL trade size that's 60% of the trade. **Don't trade below 0.005 SOL** unless you're doing dust cleanup; the math doesn't work.
+
+**SSE robustness:**
+
+13. **Force-reconnect SSE every ~4 minutes** (see "tracked_wallet_trade_stream" section above). Otherwise a connection alive 10+ min silently stops delivering events.
+14. **Treat SSE 404 / 502 as transient, not fatal.** `/agent_stream/tracked_wallet_trades` flickers during backend restarts — backoff + retry. Only `401` / `403` are fatal (real auth problem).
+
+**Audit:**
+
+15. **Log every closed cycle to a JSONL file** with: source wallet, coin, our entry size, our_buy_ts vs their_buy_ts (lag), our_buy_price_usd vs their_sell_price_usd, fees, pnl. Without this you can't compute per-trader slippage gap and can't decide which wallets are actually adding edge vs leaking through fees.
+
+**Numbers from a real run:**
+
+| Wallet pattern | their avg pnl % | our avg pnl % | gap | net at 0.005 SOL |
+|---|---|---|---|---|
+| MEV scalper (HZGy, 25s holds) | +8% | -4% | -13% | -$0.5 / cycle |
+| MEV with occasional jackpots (4BdK) | +180% | +56% | -124% | **+$13** / jackpot, -$1 / miss |
+| Slow scalper (6Dt9, 2-min holds) | +6% | +3% | -3% | +$0.05 / cycle |
+| Heavy scale-in (EXUzBT, 18-min, 92% multi_buy) | +20% | -45% | -65% | **avoid** |
+| Cleaner fast (Aeg9, 1.5m, 15% multi_buy) | +5% | +5% | 0% | +$0.10 / cycle |
+
+The strategy's edge lives in the bottom-three rows. The MEV jackpot row is a coin-flip that pays on outliers — include only if your kill-switch is sized to absorb a string of misses.
+
+### Runnable template
+
+The skill repo ships **`scripts/copy-trader.mjs`** — a production-ready implementation covering all 15 items above (plus a `trade_audit.jsonl` writer for offline slippage analysis). The agent edits the `CONFIG` block at the top for the user's strategy preferences and the user runs it as a background process.
+
+Helpers it relies on (also in the repo):
+- **`scripts/lib/api.mjs`** — `swap()` that throws on body errors (`slip` / `no_coin_balance` / `coin_not_found`); plain `api()` wouldn't.
+- **`scripts/lib/sse.mjs`** — `withReconnect()` wraps any SSE generator with a 4-min force-reconnect to dodge stale connections.
+
+```bash
+export FASOL_API_KEY="fsl_live_..."
+export FASOL_API_BASE_URL="https://api.dev-1.mymadrobot.com/trading_bot/agent"
+# Optional: restrict to specific wallets (otherwise mirrors the whole tracked list)
+# export SOURCE_WALLETS="4BdK...,Aeg9...,..."
+node scripts/copy-trader.mjs > copy-trader.log 2>&1 &
+# stop:  pkill -f copy-trader.mjs
+```
+
+Read it before you adapt it — every guardrail above maps to a labelled section in the file.
 
 ---
 
