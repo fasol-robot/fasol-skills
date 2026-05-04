@@ -240,6 +240,10 @@ Content-Type: application/json
 
 // Instant sell — sell_p is % of current position (1..100)
 { "direction": "sell", "coin_address": "...", "sell_p": "100" }
+
+// Optional on either: slippage_p — 0..100, % max slippage tolerated.
+// Default: the user's saved b_slip / s_slip from settings.
+{ "direction": "buy", "coin_address": "...", "amount_sol": "0.1", "slippage_p": "1.5" }
 ```
 
 ```bash
@@ -281,7 +285,7 @@ The trade appears in `list_trades` with `tx_type: "agent_swap"` so it's distingu
 
 The TP/SL queue immediately and arm against the actual entry price once the buy from step 1 confirms.
 
-**No slippage param yet:** the swap uses fasol_core's default slippage handling. If your strategy needs explicit slippage / priority-fee control, raise it as a feature request.
+**Slippage:** `slippage_p` (0..100) caps the max slippage; the swap is rejected on-chain if the price moved more than that. Omit to use the user's saved `b_slip` / `s_slip` defaults. Priority fee is not yet exposed — raise as a feature request if your strategy needs it.
 
 ### `place_order` — requires `place_orders`
 
@@ -574,20 +578,38 @@ data: {
     "coin_address": "...",
     "buy_sell": "buy",
     "amount_sol": 0.42,
-    "amount_coin": 1234567,
-    "price_usd": "0.0000123",
-    "date": 1745779200123,
-    "trade_type": "...",
-    "pnl_sol": 0, "pnl_percent": 0,
-    "in_sol": 0.5, "out_sol": 0.0,
+    "in_sol": 0.5,
+    "out_sol": 0.0,
     "coin_balance": 1234567,
-    "buy_count": 1, "sell_count": 0
-    // ... full LiveTrade
+    "buy_fees": 0.000054,
+    "sell_fees": 0,
+    "buy_bot_fees": 0,
+    "sell_bot_fees": 0,
+    "buy_count": 1,
+    "sell_count": 0,
+    "first_tx_at": 1745779200123,
+    "last_tx_at":  1745779200123,
+    "trade_type": "first_buy",
+    "pnl_sol": 0,
+    "pnl_percent": 0,
+    "symbol": "...",
+    "image": "...",
+    "pair_version": "...",
+    "coin_created_at": 1745778000000,
+    "mc": "...",
+    "wallet_label": "...",
+    "wallet_emoji": "🦊",
+    "group_id": null,
+    "wallet_sol_balance": 12.34
   }
 }
 
 : heartbeat
 ```
+
+**Note on timestamps:** the trade payload uses `first_tx_at` / `last_tx_at` (ms epoch) — there's no plain `date` field. `first_tx_at` is the first swap in the current cycle (resets on `sell_all`); `last_tx_at` is this swap.
+
+**Note on price:** the payload doesn't carry `amount_coin` or `price_usd`. To act on a wallet trade, either fire an instant `/swap` (uses live reserves server-side, no price needed) or call `coin_stats` for the current price snapshot.
 
 ### Worked example — copy-trade a smart-money wallet
 
@@ -604,15 +626,11 @@ for await (const evt of subscribeTrackedWalletTradeStream()) {
   if (t.buy_sell !== "buy") continue;            // only mirror their buys
   const amount_sol = (t.amount_sol * COPY_RATIO).toFixed(4);
 
-  // Optional sanity check — fetch coin_stats first, present pre-buy confirmation.
-  // Then place the limit_buy at current price (or slight above for slippage).
-  await api("POST", "/orders", {
-    body: {
-      type: "limit_buy",
-      coin_address: t.coin_address,
-      trigger_price: t.price_usd,
-      amount_sol,
-    },
+  // Optional sanity check first — fetch coin_stats and decide whether to enter.
+  // Then fire an instant market buy. /swap uses the current on-chain price, so
+  // there's no stale-price risk like there would be with limit_buy.
+  await api("POST", "/swap", {
+    body: { direction: "buy", coin_address: t.coin_address, amount_sol },
   });
 }
 ```
@@ -984,6 +1002,154 @@ String: `launchpad` (one of `pf`, `rl`, `letsbonk`, `believe`, `bags`, `moonshot
 | Coins that match a state right now or at moment T   | `snapshot_scan`              |
 
 Don't try to recreate `snapshot_scan` by sweeping `coin_stats` — `coin_stats` is one coin at a time, and `snapshot_scan` does the same job in one bounded query.
+
+---
+
+## Wallet discovery — find wallets to track
+
+`POST /wallet_search` finds Solana wallets matching profit / activity / behavior filters. Primary use case: feed for `tracked_wallets` — *"find the top profit-trader wallets active in the last hour and add them to my tracking list, then mirror their buys."*
+
+Pipeline:
+```
+wallet_search → /tracked_wallets (POST) → /agent_stream/tracked_wallet_trades → /swap or /orders
+```
+
+Requires `read_wallets` (default-on). Read-only.
+
+### Endpoint
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+  -d '{
+    "filters": {
+      "min_total_profit_usd": 5000,
+      "min_win_rate": 0.55,
+      "min_cnt_coins": 30,
+      "max_snipe_p": 0.3,
+      "last_active_within_sec": 7200,
+      "min_trades_24h": 50
+    },
+    "sort": "total_profit_usd desc",
+    "limit": 50
+  }' \
+  "$FASOL_API_BASE_URL/wallet_search"
+```
+
+**Body:**
+
+| Field | Type | Notes |
+|---|---|---|
+| `filters` | object | At least 1 whitelisted key (see below). Required. |
+| `sort` | string | `<col> [asc|desc]`. Default `total_profit_usd desc`. |
+| `limit` | number | 1..100. Default 50. |
+| `pf_share_48h` | boolean | Opt-in. Adds heavy CH JOIN over `db.swap_w` 48h to compute pumpfun trade share. **Use sparingly** — slow; cache the results client-side. |
+
+### Filter whitelist
+
+Numeric (each accepts `min_*` / `max_*` variants where listed):
+
+| Key | Source | Note |
+|---|---|---|
+| `min_total_profit_usd` / `max_total_profit_usd` | `db.wallet.total_profit_usd` | Lifetime realised PnL in USD (per `db.trade` reconstruction). |
+| `min_total_x` / `max_total_x` | `db.wallet.total_x` | Lifetime sold/invested ratio. |
+| `min_win_rate` / `max_win_rate` | `db.wallet.win_rate` | Share of coins with positive PnL (0..1). |
+| `min_cnt_coins` / `max_cnt_coins` | `db.wallet.cnt_coins` | Distinct coins traded. |
+| `max_low_coin_p` | `db.wallet.low_coin_p` | Share of low-quality (low-trader) coins. Lower = cleaner. |
+| `min_snipe_p` / `max_snipe_p` | `db.wallet.snipe_p` | Share of sniper-pattern entries. |
+| `max_scum_deal` | `db.wallet.scum_deal` | Count of "scum deal" coins. |
+| `min_gini` / `max_gini` | `db.wallet.gini` | Profit concentration; high = single-coin lottery, low = consistent. |
+| `min_profit_80` | `db.wallet.profit_80` | Profit from top-80% of coins. |
+| `last_active_within_sec` | `db.wallet.last_tx_at` | Only wallets active in the last N seconds. |
+| `wallet_type` | `db.wallet.type` | One of `fresh`, `sniper`, `profit_trader`, `scammer`. |
+| `min_trades_24h` | live count from `db.swap_w` | Adds a JOIN — counts swaps in the last 24h. |
+
+Unknown keys are silently ignored — clients can't sneak through arbitrary SQL.
+
+### Sort whitelist
+
+`total_profit_usd`, `total_x`, `win_rate`, `cnt_coins`, `gini`, `profit_80`, `last_tx_at` (each with `asc` / `desc`).
+
+### Response shape
+
+```jsonc
+{
+  "data": {
+    "applied_filters": ["min_total_profit_usd", "min_win_rate", "min_trades_24h"],
+    "sort": "w.total_profit_usd DESC",
+    "limit": 50,
+    "pf_share_48h_enabled": false,
+    "cache": { "hit": false },
+    "rows": [
+      {
+        "wallet": "4BdKaxN8...",
+        "cnt_coins": 277,
+        "low_traders_coins": 12, "snipe_coins": 8, "scum_deal": 0,
+        "total_profit_usd": 65263.82, "total_x": 1.68, "win_rate": 0.73,
+        "low_coin_p": 0.04, "snipe_p": 0.03,
+        "gini": 0.42, "profit_80": 52211.05,
+        "type": "profit_trader",
+        "last_tx_at": "2026-04-30T12:34:56Z",
+        "first_tx_at": "2025-08-01T03:11:00Z",
+        "trades_24h": 552,                 // present when min_trades_24h was used
+        // "pf_share_48h": 0.97,            // present only when pf_share_48h: true was set
+
+        "behavior": {                      // 30-day rolling, from db.trade cycles
+          "cycle_count": 68,
+          "avg_hold_sec": 312, "median_hold_sec": 57, "sub_60s_cycles": 21,
+          "avg_buys_per_cycle": 1.4, "avg_sells_per_cycle": 1.1,
+          "winning_cycles": 49, "losing_cycles": 19,
+          "avg_pnl_sol_per_cycle": 0.34, "best_cycle_pnl_sol": 12.5
+        },                                 // null = no completed cycles in window
+
+        "balance_sol": 2684.05             // null = wallet inactive 7+ days (Redis cold)
+      }
+    ]
+  }
+}
+```
+
+### Worked example — auto-discover smart money and copy buys
+
+```bash
+# Step 1 — discover top profit traders, active recently, with healthy hold pattern.
+WALLETS=$(curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"filters":{"min_total_profit_usd":50000,"min_win_rate":0.6,"max_snipe_p":0.2,"last_active_within_sec":3600,"min_trades_24h":20},"limit":10}' \
+  "$FASOL_API_BASE_URL/wallet_search" \
+  | jq -r '.data.rows[].wallet')
+
+# Step 2 — track them.
+echo "$WALLETS" | jq -R -s 'split("\n") | map(select(length>0)) | {wallets: map({wallet: .})}' \
+  | curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+      -d @- "$FASOL_API_BASE_URL/tracked_wallets"
+
+# Step 3 — subscribe and react (see "Wallet tracking" section).
+```
+
+### Caching & freshness
+
+- **Server-side cache:** 5 min TTL keyed on the canonicalised request body. Re-issuing the same request within 5 min returns `"cache":{"hit":true}` — free of charge against your rate limit.
+- **`db.wallet` rebuild cadence:** dbt runs hourly (in `fasol_clickhouse`). Materialised stats can be up to ~1h stale.
+- **`behavior` window:** rolling last 30 days from `db.trade`, also dbt-rebuilt hourly.
+- **`balance_sol`:** populated per-block by `fasol_py_stat`'s balance processor, TTL 7 days. `null` only for wallets inactive 7+ days — those are unlikely to be in your top-N anyway.
+
+Combined: results are at most ~1 h 5 min stale relative to chain. For real-time activity (does a wallet still trade?), subscribe via `tracked_wallet_trade_stream` after adding them — that's live.
+
+### When to use what
+
+| Signal | Filter to start with |
+|---|---|
+| Profitable AND active | `min_total_profit_usd` + `last_active_within_sec` + `min_trades_24h` |
+| Slow trader (DCA, multi-cycle conviction) | `min_total_profit_usd` + low `behavior.median_hold_sec` filtered client-side |
+| Sniper avoidance (when copy-trading) | `max_snipe_p: 0.3` |
+| Scam-cluster avoidance | `wallet_type` ∉ `scammer` (or just don't whitelist `scammer`) |
+| Diversified vs concentrated PnL | `min_gini` (concentrated) / `max_gini` (diversified) |
+
+### Cost & rate limits
+
+- Default request: ~150–600 ms (uncached).
+- With `pf_share_48h: true`: 700–2500 ms — **expensive**, gate behind your own logic so the agent doesn't poll it.
+- Cached: <5 ms.
+- Rate limit is the standard agent budget (60 rpm/key); a 5-min cache makes that effectively unlimited for repeated identical queries.
 
 ---
 
@@ -1590,6 +1756,7 @@ node scripts/get-scope.mjs
 node scripts/coin-stats.mjs <coin>
 node scripts/list-positions.mjs
 node scripts/list-alerts.mjs
+node scripts/wallet-search.mjs '{"filters":{"min_total_profit_usd":50000,"last_active_within_sec":3600},"limit":10}'
 node scripts/place-order.mjs limit_buy --coin <addr> --trigger-price 0.0000123 --amount-sol 0.1
 node scripts/cancel-order.mjs <order_id> --coin <addr>
 ```
