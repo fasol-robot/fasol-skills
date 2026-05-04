@@ -1055,12 +1055,26 @@ curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: appl
 |---|---|---|
 | `filters` | object | At least 1 whitelisted key (see below). Required. |
 | `sort` | string | `<col> [asc|desc]`. Default `total_profit_usd desc`. |
-| `limit` | number | 1..100. Default 50. |
-| `pf_share_48h` | boolean | Opt-in. Adds heavy CH JOIN over `db.swap_w` 48h to compute pumpfun trade share. **Use sparingly** — slow; cache the results client-side. |
+| `limit` | number | 1..100. Default 50. Final result is capped to this many rows AFTER post-filters. |
+| `pf_share_48h` | boolean | Opt-in. **Set this to `true`** in the request body (alongside `filters`) to compute a `pf_share_48h` field per row (share of trades done on pumpfun over last 48h, 0..1). Adds a heavy CH JOIN over `db.swap_w` 48h — **use sparingly**; cache the results client-side. With this off, `pf_share_48h` is absent from rows and the `min_pf_share_48h` / `max_pf_share_48h` post-filters are no-ops. |
+
+### Common patterns
+
+| Goal | Snippet |
+|---|---|
+| Active in last hour | `"last_active_within_sec": 3600` |
+| Active in last day | `"last_active_within_sec": 86400` |
+| Top profit traders, NOT MEV/snipers | `"wallet_type": "profit_trader", "max_snipe_p": 0.2, "max_median_hold_sec": 300` |
+| Hold-and-wait (slow) traders | `"min_median_hold_sec": 600, "min_cycle_count": 10` |
+| Have at least 1 SOL on hand | `"min_balance_sol": 1` |
+| Pumpfun-heavy traders | `"pf_share_48h": true` (top-level) + `"min_pf_share_48h": 0.7` (in filters) |
+| At least 30 completed trade cycles in last 30 days | `"min_cycle_count": 30` |
 
 ### Filter whitelist
 
-Numeric (each accepts `min_*` / `max_*` variants where listed):
+Filters split into two stages by where they apply:
+
+**A) Pre-filters** — applied at the SQL level on `db.wallet` (cheap, partition-pruned).
 
 | Key | Source | Note |
 |---|---|---|
@@ -1077,7 +1091,24 @@ Numeric (each accepts `min_*` / `max_*` variants where listed):
 | `wallet_type` | `db.wallet.type` | One of `fresh`, `sniper`, `profit_trader`, `scammer`. |
 | `min_trades_24h` | live count from `db.swap_w` | Adds a JOIN — counts swaps in the last 24h. |
 
+**B) Post-filters** — applied IN MEMORY after Stage 1 + behavior + balance enrichment. They drop rows where the field is null (e.g. wallet has no completed cycles, balance is Redis-cold). When you use any post-filter the server **over-fetches the candidate pool 3×** so the final result still tries to fill `limit`.
+
+| Key | Field checked | Use for |
+|---|---|---|
+| `min_cycle_count` | `behavior.cycle_count` | Statistically-meaningful sample (drop wallets with 1–2 cycles) |
+| `max_median_hold_sec` / `min_median_hold_sec` | `behavior.median_hold_sec` | Avoid MEV (sub-minute holds) or scalpers; favour conviction holders |
+| `max_avg_hold_sec` | `behavior.avg_hold_sec` | Same axis, mean instead of median |
+| `min_balance_sol` | `balance_sol` | Wallets that can actually trade size |
+| `min_pf_share_48h` / `max_pf_share_48h` | `pf_share_48h` | Pumpfun-focused vs Raydium-focused; **requires `pf_share_48h: true` body flag** |
+
 Unknown keys are silently ignored — clients can't sneak through arbitrary SQL.
+
+**Result-count contract:** when post-filters are present, `rows.length` may be less than `limit` if too few candidates passed all filters. Inspect `candidates_scanned` in the response — if it's at the over-fetch ceiling (`limit × 3`) and you got few rows back, your post-filters are tighter than the candidate pool. Loosen criteria, or raise `limit` to widen the over-fetch.
+
+### Filters NOT supported
+
+- **`balance_sol` as a pre-filter** — by design. We can't filter wallets at the SQL layer on a Redis-only field. Use the `min_balance_sol` post-filter instead (above).
+- **Behavior pre-filters** — also by design. Behavior aggregates are computed per-cycle from `db.trade`; filtering before computing them would scan the entire `db.trade`. Use post-filters above.
 
 ### Sort whitelist
 
@@ -1092,6 +1123,7 @@ Unknown keys are silently ignored — clients can't sneak through arbitrary SQL.
     "sort": "w.total_profit_usd DESC",
     "limit": 50,
     "pf_share_48h_enabled": false,
+    "candidates_scanned": 50,        // Stage 1 read this many; if you used post-filters this can be up to limit × 3
     "cache": { "hit": false },
     "rows": [
       {
