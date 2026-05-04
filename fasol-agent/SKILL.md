@@ -122,6 +122,18 @@ curl -H "Authorization: Bearer $FASOL_API_KEY" \
 
 All endpoints are HTTP, relative to `$FASOL_API_BASE_URL`. Every request must carry the `Authorization` header. Use any HTTP client your runtime gives you — examples below use `curl` for clarity.
 
+> **⚠️ Prefer streams over polling.** If you find yourself looping `coin_stats` / `list_positions` / `get_candles` every N seconds to "watch" something, **stop and use a stream** instead. There are SSE feeds for everything that changes in real time:
+>
+> | Need | Stream | Scope |
+> |---|---|---|
+> | Live price ticks for one coin | `price_stream` (`/agent_stream/coin/:ca`) | `read_coins` |
+> | Every swap on one coin (volume, VWAP, order-flow) | `coin_trade_stream` | `read_coins` |
+> | Your wallet's swap status (instant fill / fail events) | `tx_stream` | `read_positions` |
+> | Trades from wallets you track | `tracked_wallet_trade_stream` | `manage_tracking` |
+> | Your alerts firing | `alert_match_stream` | `read_alerts` |
+>
+> Streams: lower latency (sub-second vs. your polling interval), free against rate limit (one connection ≠ N requests), no stale-cache surprises. Poll only for **bootstrapping** (initial state) or **periodic snapshots that aren't time-critical** (every-5-min health check, etc.). Full stream docs further down — `## Live price stream`, `## Live coin-trade stream`, `## Live tx-status stream`, etc.
+
 ### `get_scope` — always allowed
 
 ```http
@@ -308,6 +320,8 @@ Body — `type` selects the variant:
 // Trailing
 { "type": "trailing", "coin_address": "...", "trailing_p": "10", "sell_p": "100", "activation_p": "0" }
 ```
+
+> **⚠️ TP / SL / trailing are NOT one-shots.** They survive past their fire and re-arm on the next buy on the same coin. If you `POST /orders` a TP every cycle without cleaning up the previous one, you stack duplicates that all activate on the next entry — and the first to fire wins, often closing your position immediately. Read the full **TP/SL/trailing lifecycle** section below before writing any cycle loop. Pattern: track every relative-order id you create, `DELETE /orders/{id}` for each one when the cycle ends, then start the next cycle clean.
 
 ```bash
 curl -s -X POST \
@@ -1609,10 +1623,12 @@ Don't link in compact tables of many rows — one link per coin per turn is enou
 2. **Read before write.** Fetch `coin_stats` and `list_positions` before deciding. Don't act on memory of last poll.
 3. **Confirm before buys.** No silent execution.
 4. **Honor user limits.** Server enforces scope, not intent. If the user said "max 0.1 SOL on this coin," remember it yourself.
-5. **Back off on 429.** `rate_limit_exceeded` returns `Retry-After` (seconds). Wait that long, then continue. Do not retry-storm.
-6. **Don't retry on 403.** `missing_scope` means the user hasn't granted that capability. Surface it.
-7. **Be honest.** Report what you actually did vs. what was rejected.
-8. **Solana addresses only.** SPL mints are base58, 32–44 chars. Reject `0x...` (EVM) inputs before sending.
+5. **Stream, don't poll.** For anything that changes by the second — price, swaps on a coin, your tx status, tracked-wallet activity, alert matches — use the SSE streams (`price_stream`, `coin_trade_stream`, `tx_stream`, `tracked_wallet_trade_stream`, `alert_match_stream`). Polling `coin_stats` / `get_candles` in a tight loop is wasteful and slow.
+6. **Clean up TP / SL / trailing every cycle.** They don't auto-delete — they go dormant and re-arm on the next buy on the same coin. Track the order ids you create and `DELETE /orders/{id}` when the cycle ends. See **TP/SL/trailing lifecycle** below. This is the single most common source of agent bugs.
+7. **Back off on 429.** `rate_limit_exceeded` returns `Retry-After` (seconds). Wait that long, then continue. Do not retry-storm.
+8. **Don't retry on 403.** `missing_scope` means the user hasn't granted that capability. Surface it.
+9. **Be honest.** Report what you actually did vs. what was rejected.
+10. **Solana addresses only.** SPL mints are base58, 32–44 chars. Reject `0x...` (EVM) inputs before sending.
 
 ---
 
