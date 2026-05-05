@@ -87,6 +87,17 @@ curl -H "Authorization: Bearer $FASOL_API_KEY" \
      "$FASOL_API_BASE_URL/scope"
 ```
 
+> **⚠️ Agent API ≠ web API. Use ONLY `$FASOL_API_BASE_URL/...` paths from this skill.**
+>
+> The Fasol platform exposes the same features through two parallel URL trees:
+>
+> | What | URL pattern | Auth | Use it? |
+> |---|---|---|---|
+> | **Agent API** (this skill) | `…/trading_bot/agent/<feature>` (snake_case, e.g. `/tracked_wallets/all`) | `Authorization: Bearer fsl_live_...` | **YES — always** |
+> | Web / TMA API | `…/trading_bot/<feature>` (kebab-case, e.g. `/tracked-wallets/all`) | `Authorization: tma <initData>` or web JWT | **NO — agent key returns 401** |
+>
+> If you grep the platform's frontend code or web docs you'll see kebab-case paths under `/trading_bot/`. **Do not use those.** They are the user's web-app routes and require web session auth — your Bearer key will be rejected. Always start the URL with `$FASOL_API_BASE_URL` (which already ends in `/trading_bot/agent`) and use the snake_case routes documented in this skill.
+
 ---
 
 ## Core concepts (read this before calling anything)
