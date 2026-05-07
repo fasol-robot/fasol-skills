@@ -405,7 +405,7 @@ curl -s -X POST \
   "$FASOL_API_BASE_URL/swap"
 ```
 
-**Response** (immediate — the tx is fire-and-forget):
+**Response** (immediate — the tx is fire-and-forget by default):
 
 ```json
 {
@@ -414,17 +414,82 @@ curl -s -X POST \
     "direction": "buy",
     "coin_address": "...",
     "pair_address": "...",
-    "note": "tx submitted; subscribe to /agent_stream/tx for fill confirmation"
+    "note": "tx submitted; subscribe to /agent_stream/tx for fill confirmation, or call again with ?wait=true for synchronous result"
   }
 }
 ```
 
-The tx is published to fasol_core for chain submission. To learn the actual fill price, slippage, and tx hash, you must:
+The tx is published to fasol_core for chain submission. To learn the actual fill price, slippage, and tx hash, you have **three options** in increasing order of complexity:
 
-- subscribe to `tx_stream` (recommended for active strategies — sub-second event), OR
-- poll `list_trades` after a few seconds (cheaper, OK for slow loops)
+1. **`?wait=true` (simplest)** — make `/swap` synchronous. Response blocks until the tx confirms or times out. See "Synchronous wait" below.
+2. **`tx_stream` SSE** — the real-time path. Sub-second `pending` → `success`/`failed` events as they happen. Best for active strategies that fire many swaps.
+3. **`list_trades` polling** — cheapest. Wait a few seconds, then `GET /trades?since=…` returns the row from `sol.tb_tx`. Good for slow loops.
 
 The trade appears in `list_trades` with `tx_type: "agent_swap"` so it's distinguishable from order-fired trades and user UI trades.
+
+#### Synchronous wait — `POST /swap?wait=true`
+
+Adds `?wait=true` (or `wait_ms=20000` for a custom timeout). The handler holds the HTTP connection open until fasol_core publishes the matching terminal event, then returns it. **Default 30s, max 60s**. Use this when you want a single round-trip "buy and tell me what happened" without managing the SSE.
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"direction":"buy","coin_address":"<COIN>","amount_sol":"0.1"}' \
+  "$FASOL_API_BASE_URL/swap?wait=true"
+```
+
+**Success response (HTTP 200):**
+
+```jsonc
+{
+  "data": {
+    "ok": true,
+    "status": "success",
+    "commitment": "processed",        // sometimes "confirmed" if it landed there first
+    "hash": "5Qw...abc",
+    "direction": "buy",
+    "coin_address": "...",
+    "pair_address": "...",
+    "amount_sol": "0.10",
+    "amount_coin": "1234567",
+    "price_usd": "0.00001234",
+    "error_text": null
+  }
+}
+```
+
+**Tx-failed response (HTTP 502):**
+
+```jsonc
+{
+  "data": {
+    "ok": false,
+    "status": "failed",
+    "commitment": "processed",
+    "hash": "5Qw...abc",
+    "error_text": "slip",
+    /* ... */
+  }
+}
+```
+
+**Timeout response (HTTP 504):**
+
+```json
+{
+  "error": "tx_wait_timeout",
+  "message": "No terminal event in 30000ms. The tx may still confirm — check /trades or subscribe to /agent_stream/tx.",
+  "waited_ms": 30000,
+  "direction": "buy",
+  "coin_address": "..."
+}
+```
+
+A 504 doesn't mean the tx failed — it means we didn't see a terminal event in the window. The tx may still confirm seconds later. After a 504 the agent should `GET /trades?coin_address=…&since=<just before submit>` once or twice to find the result, OR open `tx_stream` and wait.
+
+**When NOT to use `wait=true`:**
+- High-frequency strategies (the connection stays open for up to 30s, eating socket capacity).
+- Multiple concurrent swaps on the same coin from the same agent (the predicate matches the first event; subsequent calls may resolve out of order).
+- When you already have an open `tx_stream` — the SSE path is strictly better (no HTTP socket budget).
 
 **Pairs naturally with TP/SL setup:**
 
