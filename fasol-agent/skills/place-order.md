@@ -60,6 +60,31 @@ fill, or waiting for price). After fill / trigger you'll see the updated
 state via [`list_orders`](list-orders.md) and the actual fill via
 [`list_trades`](list-trades.md).
 
+## 400 responses carry self-correction hints (2026-05-29)
+
+Every 400 from this endpoint includes structured fields so you can fix the
+body without guessing. Read them in order: `missing` / `invalid` →
+`allowed` → `example` → `docs`.
+
+```jsonc
+// 400 example: agent placed a take_profit without trigger_p
+{
+  "error": "take_profit_requires_trigger_p_and_sell_p",
+  "message": "For type=\"take_profit\" body must include \"trigger_p\" (percent from entry; negative for stop_loss) and \"sell_p\" (% of position).",
+  "missing": ["trigger_p"],
+  "got": { "trigger_p": null, "sell_p": "100" },
+  "example": { "type": "take_profit", "coin_address": "<base58 mint>", "trigger_p": "50", "sell_p": "100" },
+  "docs": "https://github.com/fasol-robot/fasol-skills/blob/main/fasol-agent/skills/place-order.md"
+}
+```
+
+If `type` is unrecognised, the response includes an `allowed` field listing
+the five valid order types: `limit_buy`, `limit_sell`, `take_profit`,
+`stop_loss`, `trailing`.
+
+**Workflow on 400:** copy `example`, fill in your real values, retry once.
+If the second attempt also 400s, stop and surface the error to the user.
+
 ## Trigger semantics
 
 | Order side | Fires when |

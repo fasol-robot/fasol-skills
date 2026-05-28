@@ -109,6 +109,28 @@ curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: appl
 the agent should `GET /trades?coin_address=…&since=<just before submit>`
 once or twice to find the result, or open `tx_stream` and wait. 504 ≠ failure.
 
+## 400 responses carry self-correction hints (2026-05-29)
+
+Every 400 from this endpoint includes structured fields so you can fix the
+body without guessing. Read them in order: `missing` / `invalid` →
+`example` → `docs`.
+
+```jsonc
+// 400 example: agent forgot amount_sol on a buy
+{
+  "error": "buy_requires_positive_amount_sol",
+  "message": "For direction=\"buy\" body must include \"amount_sol\" as a positive numeric string (whole SOL, not lamports).",
+  "missing": ["amount_sol"],
+  "got": { "amount_sol": null },
+  "example": { "direction": "buy", "coin_address": "<base58 mint>", "amount_sol": "0.1" },
+  "docs": "https://github.com/fasol-robot/fasol-skills/blob/main/fasol-agent/skills/swap.md"
+}
+```
+
+**Workflow on 400:** copy `example`, fill in your real values, retry once.
+If the second attempt also 400s, stop and surface the error to the user —
+don't loop.
+
 ## Error codes worth knowing
 
 | HTTP | `error_text` | What it means |

@@ -28,6 +28,20 @@ the wrong order when you have stale IDs.
 { "data": { "ok": true, "id": "ord_abc123" } }
 ```
 
+If you omit either the path `:id` or the body `coin_address`, the 400
+response now spells out exactly what's missing and includes a minimal
+example body (since 2026-05-29):
+
+```jsonc
+{
+  "error": "missing_id_or_coin_address",
+  "message": "DELETE /orders/:id needs both the path param ...",
+  "missing": ["body.coin_address"],
+  "example": { "coin_address": "<base58 mint>" },
+  "docs": "https://github.com/fasol-robot/fasol-skills/blob/main/fasol-agent/skills/cancel-order.md"
+}
+```
+
 ## Idempotence
 
 DELETE on a deactivated / sleeping / already-cancelled order is a no-op and
