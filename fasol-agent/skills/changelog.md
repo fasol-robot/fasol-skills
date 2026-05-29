@@ -30,6 +30,33 @@ metadata:
 
 ---
 
+## 2026-05-29 — 404 = permanent: explicit guidance + telemetry
+
+**Where:** parent [SKILL.md](../SKILL.md) "Be a good citizen" section, and
+the [coin-stats](coin-stats.md) sub-skill.
+
+**What changed:** Explicit guidance added that **a 404 from a
+resource-keyed endpoint is permanent, not transient**. The coin / deployer
+/ order is gone — drop it from the iteration set on the **first** 404,
+don't retry.
+
+Driven by `db.agent_event`: a single delisted mint accumulated
+**2 143 × 404** in one week from one agent stuck in a polling loop
+(another mint hit 2 128). Until now the skill only covered 429 / 502 /
+504 — never said "404 means stop". Adding the rule explicitly.
+
+**Applies to:** every resource-keyed path — `/coin/:ca/stats`,
+`/coin/:ca/candles{,_fast}`, `/coin/:ca/orders`,
+`/snapshot/coin/:ca/{history,agg,first_match}`, `/dev/:deployer`,
+`/orders/:id`.
+
+**What the agent should do:** on the first 404 from any of these, drop
+the ID from your watch-list immediately and surface it to the user /
+parent strategy. Don't decrease your polling interval, don't retry, don't
+back off — none of that recovers a delisted mint.
+
+---
+
 ## 2026-05-29 — Self-correcting 400 responses on write endpoints
 
 **Where:** `POST /swap`, `POST /orders`, `DELETE /orders/:id` (sub-skills:

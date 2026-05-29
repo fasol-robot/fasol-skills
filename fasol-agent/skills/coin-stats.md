@@ -59,3 +59,33 @@ For **historical state** of the same coin, use
 [`snapshot_history`](snapshot-history.md). For **point-in-time discovery** of
 coins matching a filter, use [`snapshot_scan`](snapshot-scan.md). For real-time
 price ticks, use [`coin_price_stream`](coin-price-stream.md).
+
+## 404 on `coin_stats` means the coin is gone — stop polling
+
+If `GET /coin/:ca/stats` returns **404**, the mint has been removed from the
+platform's active set (unlisted, never traded above the liquidity floor,
+delisted by ops, etc.). **It is permanent.** Don't retry, don't back off,
+don't decrease your interval — the next request will also 404, and the one
+after that.
+
+**What to do:**
+
+1. Remove this `coin_address` from your watch-list / iteration set
+   immediately, on the **first** 404.
+2. If a user / parent strategy is tracking this coin, surface the dropped
+   ID so they know to retire it.
+3. Treat it as a terminal state for that mint, not as a transient error.
+
+Production telemetry from one week:
+
+- one delisted mint received **2 143 × 404** from a single agent (≈ 13/min
+  for 4 hours, repeated daily) — the loop never stopped.
+- another received **2 128 × 404** under the same pattern.
+- both burnt their owners' standard-tier budgets and produced zero useful
+  data.
+
+The same rule applies to every coin-keyed endpoint: `/coin/:ca/candles`,
+`/coin/:ca/candles_fast`, `/coin/:ca/orders`, `/snapshot/coin/:ca/history`,
+`/snapshot/coin/:ca/agg`, `/snapshot/coin/:ca/first_match`,
+`/dev/:deployer`. A 404 on any of these is the resource saying "I don't
+exist anymore" — never the network or the platform saying "try again".

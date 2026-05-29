@@ -246,6 +246,15 @@ SSE streams (concurrent-connection-capped, NOT rpm):
 - **Check `GET /rate_limit` if unsure.** Returns your current usage across
   all three tiers + the endpoint→tier map so you can self-throttle without
   guessing.
+- **404 on a resource means it's gone — drop it, don't retry.** A `404`
+  from a coin / deployer / order endpoint (`/coin/:ca/stats`,
+  `/snapshot/coin/:ca/*`, `/dev/:deployer`, `/orders/:id`, etc.) is
+  **permanent**, not a transient blip. The mint was unlisted, the order
+  was cancelled, or the path was wrong. **Remove that ID from your
+  watch-list / iteration set on the first 404 and surface it to the user.**
+  Production telemetry shows individual mints accumulating 2 000+ 404s a
+  week from a single agent stuck in a polling loop — that's a budget burn
+  and a hint your loop logic doesn't terminate.
 
 ### `GET /rate_limit` — always allowed
 
