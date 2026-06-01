@@ -64,7 +64,17 @@ path is unchanged.
 - On 400 from this endpoint, read `error_text` and `got` to confirm what
   you sent. Don't retry the same input.
 
-**Roll-out status:** ⏳ shipping in the next backend release.
+**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ⏳ prod
+(`api.fasol.trade`) — TBD with the next backend release.
+
+Verified on dev with the four-case test matrix:
+
+| Input                                                | Status | Body                                        |
+|------------------------------------------------------|--------|---------------------------------------------|
+| `14867` (alert_id by mistake)                        | 400    | `error_text` + `got: "14867"`               |
+| `Dqu1qnnTKTkR6cE6GvDxNb9pyKZuqPyfCqpump` (38 chars)  | 400    | `error_text` + echo                         |
+| `all`                                                | 400    | `error_text` + echo                         |
+| `So11111111111111111111111111111111111111112` (valid) | 200   | `{ data: [] }` (happy path, untouched)      |
 
 ---
 
