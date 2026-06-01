@@ -327,6 +327,49 @@
       ]
     },
     {
+      "slug": "smart-money-stream",
+      "category": "monitor",
+      "url": "skills/smart-money-stream.md",
+      "title": "Smart Money trade stream",
+      "subtitle": "Live SSE of every swap by any wallet in Fasol's curated Smart Money cohort (global stream, optional ?wallets= filter).",
+      "endpoint": "GET /agent_stream/smart_money_trades",
+      "scope": "read_wallets",
+      "tier": "sse",
+      "status": "stable",
+      "capabilities": [
+        "Subscribe to every SM-cohort swap in real time (global firehose)",
+        "Same LiveTrade payload as tracked-wallet-trades (with cohort rank in group_id)",
+        "Optional server-side wallet allow-list via ?wallets= (up to 50)"
+      ],
+      "prompts": [
+        "Mirror the top-20 Smart Money wallets by rank",
+        "React when any SM wallet first-buys a new coin",
+        "Compute live volume from SM-only swaps"
+      ]
+    },
+    {
+      "slug": "calls-stream",
+      "category": "monitor",
+      "url": "skills/calls-stream.md",
+      "title": "Caller publications stream",
+      "subtitle": "Live SSE of caller 'calls' for callers the user follows. Same per-user feed the /callers UI page consumes.",
+      "endpoint": "GET /agent_stream/calls",
+      "scope": "read_alerts",
+      "tier": "sse",
+      "status": "stable",
+      "capabilities": [
+        "call_init backfill batch on connect (up to 30 most-recent calls)",
+        "call_new live publications + call_prices periodic price updates",
+        "Server-side dedup within (caller, coin) so reposts don't duplicate",
+        "Per-user filtering via the user's tb_user_caller_subscription"
+      ],
+      "prompts": [
+        "Mirror new calls from a specific followed caller at 5% size",
+        "Build a 'wait for the second caller' strategy on the same coin",
+        "Track ATH-after-call performance of callers I follow"
+      ]
+    },
+    {
       "slug": "alert-match-stream",
       "category": "monitor",
       "url": "skills/alert-match-stream.md",

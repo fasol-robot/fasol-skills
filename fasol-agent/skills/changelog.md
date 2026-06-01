@@ -30,6 +30,58 @@ metadata:
 
 ---
 
+## 2026-06-02 — Two new live streams: smart_money_trades + calls
+
+**Where:** new endpoints `GET /agent_stream/smart_money_trades` and
+`GET /agent_stream/calls`. New sub-skills:
+[smart-money-stream](smart-money-stream.md) and
+[calls-stream](calls-stream.md).
+
+**What changed:** Driven by a community request — agents now get the same
+two live feeds the UI consumes:
+
+- **`smart_money_trades`** — global SSE of every swap by any wallet in
+  Fasol's curated SM cohort (`fadev.sol.smart_money_wallet`). Same
+  `LiveTrade` payload as tracked-wallet-trades; cohort rank surfaces in
+  `group_id`. Scope `read_wallets` (default-on). Optional
+  `?wallets=ca1,ca2,...` (≤ 50) for server-side allow-list.
+- **`calls`** — per-user SSE of caller publications from callers the user
+  follows. Three event types: `call_init` (backfill on connect), `call_new`
+  (live publications), `call_prices` (periodic price updates for cached
+  coins). Server-side filtered against `tb_user_caller_subscription`,
+  reuses the same REDIS_STAT pipeline that powers the `/callers` UI page.
+  Scope `read_alerts`.
+
+Both share the existing SSE tier (5 concurrent connections per key, no
+rpm). Zero new Redis subscriptions — they reuse channels the UI already
+consumes (`NEW_SMART_MONEY_TRADE`, `CALL_FEED_UPDATE`, `CALL_FEED_PRICES`).
+
+**What the agent should do:**
+- For copy-trading the curated SM cohort — switch from polling
+  `wallet_search` to subscribing to `smart_money_trades`. Use
+  `?wallets=` if you only want a subset.
+- For following individual callers — make sure your owner has followed at
+  least one caller on `fasol.trade/callers`, then subscribe to `calls`.
+  Empty stream after `ready` means zero subscriptions; tell the owner.
+- Apply the same SSE robustness rules as for `tracked_wallet_trades`:
+  back off on 429, treat 401/403/404 as terminal, dedup within a session.
+
+**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ⏳ prod
+(`api.fasol.trade`) — TBD with the next backend release.
+
+Verified on dev:
+- **`smart_money_trades`** — 3-min curl test captured 4 live SM swaps + 12
+  heartbeats at the documented 15s cadence. Payload matches the documented
+  `LiveTrade` shape including `group_id` (cohort rank) and `wallet_label`.
+- **`calls`** — end-to-end test through the real UI flow:
+  `POST /trading_bot/calls` (caller) → `publishTyped(CALL_FEED_NEW)` →
+  REDIS_STAT filter against `tb_user_caller_subscription` →
+  `CALL_FEED_UPDATE` → agent SSE delivered `event: call_new` ~50 ms after
+  the caller's POST. `event: ready` and initial `event: call_init` arrive
+  immediately on connect as documented.
+
+---
+
 ## 2026-05-29 — 404 = permanent: explicit guidance + telemetry
 
 **Where:** parent [SKILL.md](../SKILL.md) "Be a good citizen" section, and

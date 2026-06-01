@@ -58,6 +58,8 @@ detail lives here.
 | [`coin-trade-stream.md`](coin-trade-stream.md) | `GET /agent_stream/coin/:ca/trades` — every swap on one coin. |
 | [`tx-stream.md`](tx-stream.md) | `GET /agent_stream/tx` — confirmation events for the bound wallet's swaps. |
 | [`tracked-wallet-trades.md`](tracked-wallet-trades.md) | `GET /agent_stream/tracked_wallet_trades` — live SSE of swaps from tracked wallets. |
+| [`smart-money-stream.md`](smart-money-stream.md) | `GET /agent_stream/smart_money_trades` — global SM-cohort swaps; optional `?wallets=` filter. |
+| [`calls-stream.md`](calls-stream.md) | `GET /agent_stream/calls` — caller publications from followed callers. |
 | [`alert-match-stream.md`](alert-match-stream.md) | `GET /agent_stream/alert_matches` — live alert firings + milestones. |
 
 ### analytics & discovery
