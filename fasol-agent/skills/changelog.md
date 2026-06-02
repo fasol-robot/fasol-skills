@@ -64,8 +64,8 @@ path is unchanged.
 - On 400 from this endpoint, read `error_text` and `got` to confirm what
   you sent. Don't retry the same input.
 
-**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ⏳ prod
-(`api.fasol.trade`) — TBD with the next backend release.
+**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ✅ prod
+(`api.fasol.trade`).
 
 Verified on dev with the four-case test matrix:
 
@@ -114,8 +114,8 @@ consumes (`NEW_SMART_MONEY_TRADE`, `CALL_FEED_UPDATE`, `CALL_FEED_PRICES`).
 - Apply the same SSE robustness rules as for `tracked_wallet_trades`:
   back off on 429, treat 401/403/404 as terminal, dedup within a session.
 
-**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ⏳ prod
-(`api.fasol.trade`) — TBD with the next backend release.
+**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ✅ prod
+(`api.fasol.trade`).
 
 Verified on dev:
 - **`smart_money_trades`** — 3-min curl test captured 4 live SM swaps + 12
