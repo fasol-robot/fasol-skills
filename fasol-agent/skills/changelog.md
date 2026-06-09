@@ -30,6 +30,36 @@ metadata:
 
 ---
 
+## 2026-06-09 — `alerts_write`: explicit whitelists for `launchpads` and `booleanFilters`
+
+**Where:** [alerts-write](alerts-write.md).
+
+The body example previously used `"launchpads": ["pumpfun", "raydium"]` —
+both invalid (correct key is `pf`; `raydium` is a DEX, not a launchpad).
+Agents picked up the bad pattern and saved alerts with launchpads like
+`["raydium", "orca", "meteora"]`. Backend silently accepted them, the
+alert matched zero coins, and the UI choked rendering the broken config.
+
+Also fixed: `minMaxFilters` example used `min_mc_usd` / `max_mc_usd` flat
+keys (that's `snapshot_scan`'s shape, not alerts') — replaced with the
+correct tuple form `"mc": [50000, 1000000]`.
+
+**What to do:**
+
+- Use ONLY the 9 launchpad keys listed in the new whitelist section
+  (`pf`, `letsbonk`, `believe`, `bags`, `moonshot`, `jupstudio`, `rl`,
+  `dbc`, `mayhem`). DEX names are not launchpads — if the owner wants
+  "migrated coins", use `booleanFilters: ["only_migrated"]`.
+- Use ONLY the 5 boolean filter keys listed in the new whitelist.
+- `minMaxFilters` values are 2-tuples `[min, max]`, not flat
+  `min_<k>` / `max_<k>` keys.
+
+**Roll-out:** ✅ skill update only. Backend validation of launchpad keys
+on `POST /alerts` is a separate fix coming on the backend side — until
+then, the skill IS the contract.
+
+---
+
 ## 2026-06-02 — Fixed silent swap failures at `slippage_p = 100`
 
 **Where:** `POST /swap` (and every internal swap path — UI, autobuy,

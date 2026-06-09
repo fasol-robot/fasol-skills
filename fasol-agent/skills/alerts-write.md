@@ -22,14 +22,16 @@ default**; your owner must explicitly hand it over. Tier: `medium`.
 ```jsonc
 {
   "name": "Migrated + dev sold",
-  "launchpads": ["pumpfun", "raydium"],         // ≥1 required
+  "launchpads": ["pf", "letsbonk"],             // ≥1 required, see whitelist below
   "booleanFilters": ["only_migrated", "with_socials", "dex_paid"],
-  "minMaxFilters": {                            // any subset; nulls allowed
-    "min_mc_usd": 50000, "max_mc_usd": 1000000,
-    "min_vol_5m_usd": 10000,
-    "min_holders": 200,
-    "max_dev_hold_p": 5
-    // Full key list = same min_/max_ set as snapshot_scan / alert_simulate
+  "minMaxFilters": {                            // any subset; tuple [min, max], null on either side
+    "mc":              [50000, 1000000],
+    "vol_5m":          [10000, null],
+    "holders_count":   [200, null],
+    "dev_hold_p":      [null, 5]
+    // Full key list — same as alert-simulate's minMaxFilters (every CH column
+    // on db.coin_snapshot gets a tuple filter). NEVER use flat `min_<col>` /
+    // `max_<col>` keys here — that's the snapshot_scan shape, not alert's.
   },
   "milestones": [1.5, 2, 5, 10],                // multipliers tracked after match
   "is_paused": false,
@@ -50,6 +52,51 @@ default**; your owner must explicitly hand it over. Tier: `medium`.
 Server enforces: `name` non-empty, ≥1 launchpad, valid `booleanFilters`
 strings, sufficient SOL balance when `autobuy_amount > 0`. Returns the saved
 row (`{ data: alert }`).
+
+### `launchpads` — closed whitelist
+
+Use ONLY these exact keys. **`launchpads` is the launchpad/protocol where the
+coin was minted, NOT the DEX it later trades on.** Common LLM mistake:
+filling it with DEX names (`raydium`, `orca`, `meteora`, `jupiter`) — backend
+silently accepts those today but the alert matches **zero** coins and the
+UI gets confused rendering the bad config.
+
+| Key | Project |
+|---|---|
+| `pf` | Pump.fun |
+| `letsbonk` | LetsBonk |
+| `believe` | Believe |
+| `bags` | Bags |
+| `moonshot` | Moonshot |
+| `jupstudio` | Jup Studio |
+| `rl` | LaunchLab |
+| `dbc` | Meteora DBC |
+| `mayhem` | Mayhem (virtual — matches `is_mayhem_mode = 1` coins regardless of real launchpad) |
+
+If you want "any launchpad", enumerate all 9 keys. There is no `"all"`
+shortcut. If the owner asks for "migrated to Raydium/Meteora/Orca",
+that's a **boolean filter** (`"only_migrated"` in `booleanFilters`), not
+a launchpad value.
+
+### `booleanFilters` — closed whitelist
+
+```
+with_socials      // coin has any of web / tg / twitter
+only_migrated     // already migrated off launchpad to a real DEX pair
+dex_paid          // DEX listing fee paid (Dexscreener "paid" badge)
+is_cashback_coin  // coin is in the Fasol cashback program
+dev_last_migrated // deployer's previous coin migrated
+```
+
+Anything else → backend rejects or the alert silently never matches.
+
+### `minMaxFilters` keys
+
+Same set as `/alert/simulate` — see [alert-simulate](alert-simulate.md#body-shape)
+for the full enumerable list. Notable ones the UI uses most:
+`mc`, `ath`, `liq`, `vol_5m`, `holders_count`, `coin_created_seconds_ago`,
+`migration_p`, `dev_hold_p`, `top_10_p`, `drop_from_ath_p`, `global_fees`.
+Each value is a 2-tuple `[min, max]` with either side nullable.
 
 ## Pause / autobuy shims — no round-trip on full config
 
