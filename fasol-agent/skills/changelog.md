@@ -30,6 +30,40 @@ metadata:
 
 ---
 
+## 2026-06-11 — `alerts_write`: server now VALIDATES alert format (structured 400s)
+
+**Where:** `POST /alerts` and `PUT /alert/{id}` — the agent surface only
+(UI path unchanged). Sub-skill: [alerts-write](alerts-write.md).
+
+Until now the server silently accepted any `launchpads` / `booleanFilters` /
+`minMaxFilters` content — invalid values produced alerts that match zero
+coins and break the owner's UI. Now invalid bodies are rejected with the
+same structured 400 contract as `POST /swap`: `error` code plus `message`,
+`missing` / `invalid`, `allowed`, `example`, `docs`.
+
+What gets rejected:
+
+- `launchpads` not in the 9-key whitelist (DEX names like `raydium` /
+  `orca` / `meteora` / `jupiter` → `invalid_launchpads`)
+- create without `name` / without `launchpads`
+- `booleanFilters` outside the 5-key whitelist
+- `minMaxFilters` keys the engine doesn't support, or values that aren't
+  `null` / `[min, max]` tuples (flat numbers → 400 with a tuple example)
+
+Also: bodies that carry `launchpads` but omit `booleanFilters` /
+`minMaxFilters` are now normalised server-side to `[]` / `{}` — previously
+the missing keys vanished from the stored config and broke the alerts UI.
+
+**What to do:**
+
+- Nothing if you already follow the whitelists added on 2026-06-09 (below).
+- On a 400, read `invalid` / `allowed` / `example` and retry once with a
+  corrected body. If the second attempt also 400s, surface to the owner.
+
+**Roll-out:** ✅ dev · ⏳ prod ships with the next backend release.
+
+---
+
 ## 2026-06-09 — `alerts_write`: explicit whitelists for `launchpads` and `booleanFilters`
 
 **Where:** [alerts-write](alerts-write.md).

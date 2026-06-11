@@ -49,9 +49,18 @@ default**; your owner must explicitly hand it over. Tier: `medium`.
 }
 ```
 
-Server enforces: `name` non-empty, ≥1 launchpad, valid `booleanFilters`
-strings, sufficient SOL balance when `autobuy_amount > 0`. Returns the saved
-row (`{ data: alert }`).
+Server enforces (agent surface): `name` non-empty, ≥1 launchpad from the
+whitelist below, `booleanFilters` / `minMaxFilters` keys from their
+whitelists, min/max values as `[min, max]` tuples, sufficient SOL balance
+when `autobuy_amount > 0`. Invalid bodies get a structured 400 (`error`,
+`message`, `invalid` / `missing`, `allowed`, `example`, `docs`) — fix and
+retry once; if the second attempt also 400s, surface to the owner.
+Omitted `booleanFilters` / `minMaxFilters` are normalised to `[]` / `{}`.
+Returns the saved row (`{ data: alert }`).
+
+> ⏳ Validation is live on dev; prod ships with the next backend release.
+> Until then prod still accepts invalid values silently — follow the
+> whitelists regardless.
 
 ### `launchpads` — closed whitelist
 
