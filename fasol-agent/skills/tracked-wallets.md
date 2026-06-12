@@ -15,19 +15,39 @@ warm-up batch — see below).
 | Method + Path | Purpose |
 |---|---|
 | `GET /tracked_wallets` | List every tracked wallet for the user |
-| `POST /tracked_wallets` | Add wallet(s): `{ wallets: [{ wallet, group_id?, name?, notify? }] }` |
-| `PUT /tracked_wallets/:wallet` | Update one wallet's group / name / notify flag |
+| `POST /tracked_wallets` | Add wallet(s) — body is an **array**: `[{ wallet, group_id?, name?, emoji? }]` |
+| `PUT /tracked_wallets/:wallet` | Update one wallet's `group_id` / `name` / `emoji` |
+| `PUT /tracked_wallets/:wallet/notify` | Toggle TG notifications: `{ "notify": true\|false }` |
 | `DELETE /tracked_wallets/:wallet` | Untrack one wallet |
 | `DELETE /tracked_wallets/all` | Clear the whole tracking list |
 | `GET /tracked_wallets/live_trades` | Recent swaps batch — **warm-up only**, see below |
 
+> ⏳ **Field-name note (fix shipping):** until the next backend release,
+> POST/PUT silently expect camelCase `groupId` + `label` and ignore
+> `group_id` / `name` — symptoms: wallets created with `group_id: null`, and
+> `PUT` replying `404 "Wallet not found"` for wallets that exist (it ran an
+> empty update). The fix makes the server accept both spellings, the
+> `{ "wallets": [...] }` envelope on POST, and return a structured
+> `400 nothing_to_update` instead of the misleading 404. If you hit those
+> symptoms today, send `groupId` / `label` as a workaround.
+
 ## Examples
 
 ```bash
-# Add two devs to the "snipers" group
+# Add two devs, second one straight into group 4464
 curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
-  -d '{"wallets":[{"wallet":"Cs7c...","name":"BONK dev"},{"wallet":"3fDu..."}]}' \
+  -d '[{"wallet":"Cs7c...","name":"BONK dev"},{"wallet":"3fDu...","group_id":4464}]' \
   "$FASOL_API_BASE_URL/tracked_wallets"
+
+# Move an already-tracked wallet into a group (group ids — see wallet-groups.md)
+curl -s -X PUT -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"group_id":4464}' \
+  "$FASOL_API_BASE_URL/tracked_wallets/Cs7c..."
+
+# Remove from any group
+curl -s -X PUT -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"group_id":null}' \
+  "$FASOL_API_BASE_URL/tracked_wallets/Cs7c..."
 
 # List
 curl -s -H "Authorization: Bearer $FASOL_API_KEY" "$FASOL_API_BASE_URL/tracked_wallets"

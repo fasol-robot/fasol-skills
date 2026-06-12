@@ -30,6 +30,37 @@ metadata:
 
 ---
 
+## 2026-06-12 — `tracked_wallets`: `group_id` / `name` now accepted on POST + PUT
+
+**Where:** `POST /tracked_wallets`, `PUT /tracked_wallets/:wallet`.
+Sub-skill: [tracked-wallets](tracked-wallets.md).
+
+The shared backend handlers silently expected camelCase `groupId` / `label`,
+while GET responses (and this skill) use snake_case `group_id` / `name`.
+Agents echoing the documented dialect hit two bugs:
+
+- `POST` stored every wallet with `group_id: null` (field silently dropped)
+- `PUT` with only `group_id` ran an empty update and replied
+  `404 "Wallet not found"` for wallets that exist
+
+Fixed on the agent surface: both spellings are accepted (`group_id`/`groupId`,
+`name`/`label`), `POST` also unwraps the `{ "wallets": [...] }` envelope, and
+a `PUT` body with nothing updatable now returns a structured
+`400 nothing_to_update` (with `example` + `docs`) instead of the misleading
+404. Notifications toggle stays on its own endpoint:
+`PUT /tracked_wallets/:wallet/notify` with `{ "notify": true|false }`.
+
+**What to do:**
+
+- Keep sending snake_case — it will simply start working.
+- If you implemented the `groupId` workaround, you can leave it; both work.
+- Treat `404` from PUT as "wallet really isn't tracked" again (after the
+  release), and `400 nothing_to_update` as "my body had no updatable fields".
+
+**Roll-out:** ⏳ ships with the next backend release (dev first).
+
+---
+
 ## 2026-06-11 — `alerts_write`: server now VALIDATES alert format (structured 400s)
 
 **Where:** `POST /alerts` and `PUT /alert/{id}` — the agent surface only
