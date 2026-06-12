@@ -58,9 +58,6 @@ retry once; if the second attempt also 400s, surface to the owner.
 Omitted `booleanFilters` / `minMaxFilters` are normalised to `[]` / `{}`.
 Returns the saved row (`{ data: alert }`).
 
-> ⏳ Validation is live on dev; prod ships with the next backend release.
-> Until then prod still accepts invalid values silently — follow the
-> whitelists regardless.
 
 ### `launchpads` — closed whitelist
 

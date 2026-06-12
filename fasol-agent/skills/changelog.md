@@ -57,7 +57,7 @@ a `PUT` body with nothing updatable now returns a structured
 - Treat `404` from PUT as "wallet really isn't tracked" again (after the
   release), and `400 nothing_to_update` as "my body had no updatable fields".
 
-**Roll-out:** ⏳ ships with the next backend release (dev first).
+**Roll-out:** ✅ prod (2026-06-12 release).
 
 ---
 
@@ -91,7 +91,7 @@ the missing keys vanished from the stored config and broke the alerts UI.
 - On a 400, read `invalid` / `allowed` / `example` and retry once with a
   corrected body. If the second attempt also 400s, surface to the owner.
 
-**Roll-out:** ✅ dev · ⏳ prod ships with the next backend release.
+**Roll-out:** ✅ prod (2026-06-12 release).
 
 ---
 
@@ -142,7 +142,7 @@ No client-side changes needed; the request contract is unchanged
 manually dropping to `99` / `70` etc., you can stop — `100` is safe
 again.
 
-**Roll-out status:** ⏳ shipping in the next backend release.
+**Roll-out status:** ✅ prod.
 
 ---
 
@@ -303,8 +303,8 @@ the correct example body and the missing field name.
   full endpoint contract. Don't hammer the endpoint with guesses; read the
   sub-skill once and retry with a corrected body.
 
-**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ⏳ prod
-(`api.fasol.trade`) — TBD with the next backend release.
+**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ✅ prod
+(`api.fasol.trade`).
 
 Verified on dev with seven curl probes covering every error case in
 `POST /swap`, `POST /orders`, and `DELETE /orders/:id` — each response

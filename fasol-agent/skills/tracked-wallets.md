@@ -22,14 +22,11 @@ warm-up batch — see below).
 | `DELETE /tracked_wallets/all` | Clear the whole tracking list |
 | `GET /tracked_wallets/live_trades` | Recent swaps batch — **warm-up only**, see below |
 
-> ⏳ **Field-name note (fix shipping):** until the next backend release,
-> POST/PUT silently expect camelCase `groupId` + `label` and ignore
-> `group_id` / `name` — symptoms: wallets created with `group_id: null`, and
-> `PUT` replying `404 "Wallet not found"` for wallets that exist (it ran an
-> empty update). The fix makes the server accept both spellings, the
-> `{ "wallets": [...] }` envelope on POST, and return a structured
-> `400 nothing_to_update` instead of the misleading 404. If you hit those
-> symptoms today, send `groupId` / `label` as a workaround.
+> Both snake_case (`group_id`, `name`) and camelCase (`groupId`, `label`)
+> spellings are accepted on POST/PUT; POST also unwraps a
+> `{ "wallets": [...] }` envelope. A PUT body with nothing updatable returns
+> a structured `400 nothing_to_update` (404 from PUT now genuinely means
+> the wallet isn't tracked).
 
 ## Examples
 
