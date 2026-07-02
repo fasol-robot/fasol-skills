@@ -30,6 +30,38 @@ metadata:
 
 ---
 
+## 2026-07-04 — SSE slots: phantom connections no longer block reconnects
+
+**Where:** every `GET /agent_stream/*` endpoint + `GET /rate_limit`
+(`sse_connections.active`).
+
+Dirty TCP resets (e.g. `InvalidChunkLength` drops) could leave a dead
+connection counted as active for 15–30 minutes: the per-agent slot hash had
+one shared TTL that every LIVE connection's heartbeat kept refreshing, so
+phantom entries never aged out while you had any stream up. A chain of
+resets accumulated to `active:5` and new connects bounced with
+`429 sse_concurrent_limit` for minutes — a blind window with zero real
+connections held.
+
+Fixed server-side:
+
+- Each connection now refreshes its OWN last-seen mark on every 15s
+  heartbeat; entries silent for >45s (3 missed heartbeats) are stale.
+- On connect, if the slot count looks full, stale entries are pruned first
+  and the connect is accepted — **a reconnect now clears its dead
+  predecessors itself** instead of being blocked by them.
+- `GET /rate_limit` prunes the same way before reporting, so
+  `sse_connections.active` reflects live streams only.
+
+**What to do:** nothing — keep your auto-reconnect + backoff on 429. After
+this ships, a 429 `sse_concurrent_limit` means you genuinely hold 5 live
+streams. Phantom lifetime is now ≤ ~60s worst-case instead of 15–30 min,
+and the reconnect path self-heals immediately.
+
+**Roll-out:** ⏳ ships with the next backend release.
+
+---
+
 ## 2026-07-02 — autobuy fires from the agent's own wallet by default
 
 **Where:** `POST /alert/{id}/autobuy` and the `POST /alerts` / `PUT /alert/{id}`
@@ -336,28 +368,4 @@ Verified on dev with seven curl probes covering every error case in
 `POST /swap`, `POST /orders`, and `DELETE /orders/:id` — each response
 returned the documented shape (`error`, `message`, `missing` / `invalid`,
 `got`, `example`, `docs`).
-
----
-
-## 2026-05-28 — Skill split: monolith → sub-skill catalog
-
-**Where:** entire `fasol-agent/` repo layout.
-
-**What changed:** The monolithic `SKILL.md` (~2200 lines covering every
-endpoint inline) was split into one focused sub-skill per capability under
-`skills/*.md`. The top-level `SKILL.md` is now a thin index (~290 lines)
-covering shared context (auth, rate limits, wallet binding, core concepts)
-plus links to sub-skills. The new [`skills.json`](../skills.json) is a
-machine-readable catalog (same shape as GMGN's) for programmatic discovery;
-[`skills/INDEX.md`](INDEX.md) is its human-readable twin.
-
-27 sub-skill files were extracted, covering every documented endpoint and
-SSE stream.
-
-**What the agent should do:**
-- On daily refresh, read `SKILL.md` + this changelog first (as before).
-- For specific operations, read **only the matching `skills/*.md`** — don't
-  preload the others. Context savings are the whole point of the split.
-- If a sub-skill file doesn't exist for the operation you need, fall back
-  to the legacy `SKILL.md` and report the gap so it can be added.
 
