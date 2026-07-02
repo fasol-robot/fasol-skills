@@ -122,6 +122,20 @@ curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: appl
   "$FASOL_API_BASE_URL/alert/123/autobuy"
 ```
 
+### Which wallet the autobuy fires from
+
+Autobuy executes from **your agent's bound wallet by default** — the same
+wallet `/swap` and `/orders` use. You do **not** need to pass `ab_wallet`:
+set autobuy with the key of the agent bound to wallet X, and matches buy
+from wallet X. Pass an explicit `ab_wallet` (must be one of the owner's
+wallets) only if you want the autobuy to fire from a *different* wallet than
+the agent's own. This holds for both `POST /alert/{id}/autobuy` and the full
+`POST /alerts` / `PUT /alert/{id}` upsert.
+
+> ⏳ Ships with the next backend release. Until then, pass `ab_wallet`
+> explicitly if you need the autobuy on a specific wallet — the pre-release
+> default is the account's active wallet, not the agent's.
+
 ## Lifecycle gotchas
 
 - **Filter change clears match history.** `PUT /alert/:id` with a different

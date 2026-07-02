@@ -30,6 +30,32 @@ metadata:
 
 ---
 
+## 2026-07-02 — autobuy fires from the agent's own wallet by default
+
+**Where:** `POST /alert/{id}/autobuy` and the `POST /alerts` / `PUT /alert/{id}`
+upsert. Sub-skill: [alerts-write](alerts-write.md).
+
+Setting autobuy through an agent key now binds the execution wallet to **that
+agent's bound wallet** when you don't pass an explicit `ab_wallet` — same
+parity as `/swap` and `/orders`. Previously the autobuy silently fell back to
+the account's *active* wallet, so a multi-wallet owner who set autobuy via the
+agent-for-wallet-X saw buys fire from their primary wallet instead of X.
+
+**What to do:**
+
+- Nothing, if you want autobuy on the agent's own wallet — it just works now.
+- Pass `ab_wallet` explicitly only to fire autobuy from a *different* owned
+  wallet than the agent's.
+
+**Roll-out:** ⏳ ships with the next backend release (dev first).
+
+*Unrelated account note (not an API change): the active-agents-per-user cap
+was raised 3 → 10. If `POST /agents` returns `409 max N active agents`, that's
+the cap — revoke an unused agent or ask the owner. A 409 means no key was
+issued; don't treat the response as a working key.*
+
+---
+
 ## 2026-06-12 — `tracked_wallets`: `group_id` / `name` now accepted on POST + PUT
 
 **Where:** `POST /tracked_wallets`, `PUT /tracked_wallets/:wallet`.
@@ -335,48 +361,3 @@ SSE stream.
 - If a sub-skill file doesn't exist for the operation you need, fall back
   to the legacy `SKILL.md` and report the gap so it can be added.
 
----
-
-## 2026-05-28 — SSE `tracked_wallet_trades`: silent-stop fixed (dev + prod)
-
-**Where:** `GET /agent_stream/tracked_wallet_trades` (sub-skill:
-[tracked-wallet-trades](tracked-wallet-trades.md)).
-
-**What changed:** Root cause of the "connection alive 10+ min silently
-stops delivering events while heartbeats keep arriving" bug was identified
-and fixed. The cross-process `REDIS_STAT.liveTradesTrack` cache hard-evicted
-a user from its `walletToUsers` map after 30 min without any swap on their
-tracked wallets — heartbeats kept arriving from the WS process (they're
-local; no cross-process dependency), so the connection looked fine, but
-events stopped dispatching. Fix: WS now re-publishes `JOINED_LIVE_TRADES`
-every ~60s from the heartbeat timer, idempotently refreshing `userLastSeen`.
-Eviction can no longer fire while a SSE is alive.
-
-**Roll-out status:** ✅ dev (`api.dev-1.mymadrobot.com`), ✅ prod
-(`api.fasol.trade`).
-
-Verified on dev with a 4-min SSE test: heartbeats every 15s, JOIN keepalive
-every 60s (REDIS_STAT log: `User cache updated for live trades` 4 times in
-4 minutes), no event delivery interruption.
-
-**What the agent should do:**
-- The 4-min `withReconnect()` client-side workaround **was retired** from
-  `scripts/lib/sse.mjs` along with this fix. Any external strategy that
-  still imports it will fail to import — drop the wrapper, use the bare
-  `subscribe*` generators (they already auto-reconnect on transient drops
-  via streamSSE's built-in backoff).
-- If silent-stop is ever observed again on either dev or prod — it's a
-  different cause (probably ioredis subscription state loss); report to
-  the skill owner for separate investigation.
-
----
-
-<!-- ┌────────────────────────────────────────────────────────────────────┐
-     │ Добавление новой записи — workflow                                │
-     ├────────────────────────────────────────────────────────────────────┤
-     │ 1. Вставить новую запись **под этим разделителем** (сверху).     │
-     │ 2. Если в файле уже 10 записей, удалить самую старую (внизу).    │
-     │ 3. Обновить дату в верхней записи (формат YYYY-MM-DD).            │
-     │ 4. Один коммит на одно изменение — тогда git log даёт полную     │
-     │    историю, а этот файл — последние 10 изменений.                │
-     └────────────────────────────────────────────────────────────────────┘ -->
