@@ -3,7 +3,13 @@
 > **Sub-skill of [Fasol Agent](../SKILL.md).**
 
 `GET /positions` — returns the agent's bound-wallet open positions. The wallet
-is derived server-side from the API key; you don't pass it.
+is derived server-side from the API key; you don't pass it. The response
+echoes which wallet was read in a top-level `wallet` field.
+
+> ⏳ The bound-wallet lens (and the `wallet` echo) ship with the next backend
+> release. Until then the server actually reads the account's *active* wallet
+> — if your owner has several wallets, positions may not match what `/swap` /
+> `/orders` trade on.
 
 Requires `read_positions`. Tier: `medium`.
 
@@ -29,7 +35,8 @@ curl -s -H "Authorization: Bearer $FASOL_API_KEY" "$FASOL_API_BASE_URL/positions
       "unrealised_pnl_sol": "0.567",
       "unrealised_pnl_p":   "45.8"
     }
-  ]
+  ],
+  "wallet": "Cs7c..."
 }
 ```
 

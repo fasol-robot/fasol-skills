@@ -9,8 +9,11 @@ required). Tier: `standard`.
 > **Always call this first.** Knowing your scopes lets you avoid attempting
 > calls that would 403, and the runtime's tool list should be the scope
 > intersection with what's actually available. The `data.wallet` field also
-> tells you which wallet your trades will fire on — your "self" identifier
-> for any read-side filtering against multi-wallet endpoints.
+> tells you which wallet your trades will fire on — your "self" identifier.
+> Reads (`/positions`, `/orders`, `/trades`, `/wallet_balance`) default to
+> this same wallet (⏳ next backend release; see the Wallet binding section
+> in the parent skill for pre-release behavior), so you normally never need
+> to filter by wallet yourself.
 
 ## Request
 

@@ -170,9 +170,17 @@ at create-time. This is a hard server-side boundary, not advice:
   guarantees activation works.
 - **Reads** ([`list_positions`](skills/list-positions.md),
   [`list_orders`](skills/list-orders.md),
-  [`list_trades`](skills/list-trades.md)) span ALL of the user's wallets.
-  If you want a single-wallet view, filter client-side using
-  `wallet === <your wallet>` from `/scope`.
+  [`list_trades`](skills/list-trades.md)) default to **that wallet too** —
+  your whole world view matches the wallet you trade from, no client-side
+  filtering needed. `list_trades` additionally accepts `?wallet=<addr|all>`
+  for another owned wallet / the account-wide view.
+
+  > ⏳ Ships with the next backend release. Until then: `/positions` and
+  > `/orders` return the account's *active* wallet (whatever the owner has
+  > selected in the UI) and `/trades` returns ALL wallets with no `wallet`
+  > field to filter on — recognise your own trades via `source_kind ===
+  > "agent"` / `tx_type === "agent_swap"` and treat cross-wallet rows as
+  > noise until the release lands.
 - **You cannot switch wallets via the API.** The owner picks the wallet in
   the AI Agents UI. They can change it there; on next call you'll see the
   new wallet via `/scope`.

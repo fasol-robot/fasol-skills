@@ -10,6 +10,16 @@ reset for re-arming). The actual sell price, sell SOL, and tx hash live in
 
 Requires `read_positions`.
 
+**Wallet lens:** defaults to your **bound wallet** — the trades you see are
+the trades of the wallet you fire. `?wallet=<addr>` narrows to another of
+the owner's wallets, `?wallet=all` gives the account-wide view. Each row
+carries a `wallet` field, and the response echoes the active lens top-level.
+
+> ⏳ Ships with the next backend release. Until then the endpoint always
+> returns ALL of the account's wallets and rows have no `wallet` field —
+> recognise your own trades via `source_kind === "agent"` (orders-engine
+> fires) / `tx_type === "agent_swap"` (your swaps).
+
 ## Request
 
 ```bash
@@ -31,6 +41,7 @@ curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
 | `from_ts` | `now - 24h` | unix ms |
 | `to_ts` | `now` | unix ms |
 | `limit` | `100`, max **`500`** | paginate further by lowering `to_ts` |
+| `wallet` | bound wallet | `<addr>` = another owned wallet, `all` = account-wide (⏳ next release) |
 
 ## Response
 
@@ -41,6 +52,7 @@ curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
       "id": 123456,
       "ts": 1745779200123,
       "hash": "5Qw...",
+      "wallet": "Cs7c...",
       "coin_address": "...",
       "symbol": "BONK",
       "direction": "buy",
@@ -59,7 +71,8 @@ curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
     }
   ],
   "summary": { "total": 12, "buys": 6, "sells": 5, "failed": 1 },
-  "window":  { "from_ts": 1745695200000, "to_ts": 1745781600000, "limit": 100 }
+  "window":  { "from_ts": 1745695200000, "to_ts": 1745781600000, "limit": 100 },
+  "wallet":  "Cs7c..."
 }
 ```
 

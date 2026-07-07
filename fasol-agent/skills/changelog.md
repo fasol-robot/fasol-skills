@@ -30,6 +30,44 @@ metadata:
 
 ---
 
+## 2026-07-08 — reads default to the BOUND wallet; agent cap 10 → 20
+
+**Where:** `GET /positions`, `GET /orders`, `GET /coin/:ca/orders`,
+`GET /trades`. Sub-skills: [list-positions](list-positions.md),
+[list-orders](list-orders.md), [list-trades](list-trades.md),
+[get-scope](get-scope.md).
+
+Until now the read endpoints did NOT look at the wallet your key is bound
+to: `/positions` and both `/orders` lists read the account's *active*
+wallet (whatever the owner had selected in the UI), and `/trades` returned
+every wallet of the account with no `wallet` field to filter on. Practical
+symptoms: an agent couldn't see the orders it had just placed via
+`place_order`, and positions/trades didn't match the wallet `/swap` fires
+from.
+
+Fixed: all four reads now default to the **bound wallet** — the same lens
+as `/swap`, `POST /orders` and `/wallet_balance`. Additions:
+
+- `/trades` accepts `?wallet=<addr>` (another owned wallet) and
+  `?wallet=all` (the old account-wide view); rows now carry `wallet`, and
+  the response echoes the active lens top-level.
+- `/positions` response gains a top-level `wallet` echo.
+- Legacy keys without a wallet binding keep the old account-wide/active
+  behavior.
+
+**What to do:**
+
+- Nothing, if you already assumed reads were "my wallet" — now they are.
+- If you RELIED on account-wide `/trades`, pass `?wallet=all` explicitly.
+- Drop client-side wallet-filter workarounds once the release lands.
+
+*Account note: the active-agents-per-user cap rises 10 → 20 in the same
+release (one key per wallet scales further). 409 semantics unchanged.*
+
+**Roll-out:** ⏳ ships with the next backend release.
+
+---
+
 ## 2026-07-08 — `autobuy_orders`: doc example was WRONG (`type` key + numeric values)
 
 **Where:** [alerts-write](alerts-write.md) — `POST /alerts`, `PUT /alert/:id`,
@@ -340,30 +378,3 @@ Verified on dev:
   `CALL_FEED_UPDATE` → agent SSE delivered `event: call_new` ~50 ms after
   the caller's POST. `event: ready` and initial `event: call_init` arrive
   immediately on connect as documented.
-
----
-
-## 2026-05-29 — 404 = permanent: explicit guidance + telemetry
-
-**Where:** parent [SKILL.md](../SKILL.md) "Be a good citizen" section, and
-the [coin-stats](coin-stats.md) sub-skill.
-
-**What changed:** Explicit guidance added that **a 404 from a
-resource-keyed endpoint is permanent, not transient**. The coin / deployer
-/ order is gone — drop it from the iteration set on the **first** 404,
-don't retry.
-
-Driven by `db.agent_event`: a single delisted mint accumulated
-**2 143 × 404** in one week from one agent stuck in a polling loop
-(another mint hit 2 128). Until now the skill only covered 429 / 502 /
-504 — never said "404 means stop". Adding the rule explicitly.
-
-**Applies to:** every resource-keyed path — `/coin/:ca/stats`,
-`/coin/:ca/candles{,_fast}`, `/coin/:ca/orders`,
-`/snapshot/coin/:ca/{history,agg,first_match}`, `/dev/:deployer`,
-`/orders/:id`.
-
-**What the agent should do:** on the first 404 from any of these, drop
-the ID from your watch-list immediately and surface it to the user /
-parent strategy. Don't decrease your polling interval, don't retry, don't
-back off — none of that recovers a delisted mint.
