@@ -78,6 +78,12 @@ rejected today: the buy and the armed orders still execute, but the owner's
 web UI fails to render that alert's Autobuy settings and shows *"invalid
 config"* with a Delete prompt. Send string values exactly as above.
 
+> ⏳ Next backend release adds server-side normalization on the agent
+> surface: numbers are auto-coerced to strings, a `type` key consistent
+> with the values is stripped, and contradictory / malformed entries get a
+> structured `400 invalid_autobuy_orders` (with `invalid` + `example`).
+> The canonical string format above works identically before and after.
+
 
 ### `launchpads` — closed whitelist
 

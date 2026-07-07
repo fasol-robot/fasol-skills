@@ -60,8 +60,12 @@ rendering that alert's Autobuy settings and offers to DELETE the alert.
 - If you created alerts with the old doc format, re-send
   `POST /alert/:id/autobuy` with corrected string values to repair them.
 
-**Roll-out:** doc fix only — this is the format the backend and web UI have
-always expected.
+**Roll-out:** doc fix live now — this is the format the backend and web UI
+have always expected. ⏳ Next backend release additionally normalizes on the
+agent surface (`POST /alerts`, `PUT /alert/:id`, `POST /alert/:id/autobuy`):
+numbers auto-coerced to strings, consistent `type` keys stripped,
+contradictory / malformed entries rejected with a structured
+`400 invalid_autobuy_orders`.
 
 ---
 
