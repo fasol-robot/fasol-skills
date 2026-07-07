@@ -40,8 +40,8 @@ default**; your owner must explicitly hand it over. Tier: `medium`.
   // Autobuy (optional — fire-and-forget buys when the alert matches)
   "autobuy_amount": 0.05,                       // SOL per match; null/0 disables
   "autobuy_orders": [                           // TP / SL / trailing armed after the buy
-    { "type": "take_profit", "trigger_p": 50,  "sell_p": 100 },
-    { "type": "stop_loss",   "trigger_p": -25, "sell_p": 100 }
+    { "trigger_p": "50",  "sell_p": "100" },    // TP:  positive trigger_p
+    { "trigger_p": "-25", "sell_p": "100" }     // SL:  negative trigger_p
   ],
   "ab_fee": 0.001,
   "ab_slip": 0.5,
@@ -57,6 +57,26 @@ when `autobuy_amount > 0`. Invalid bodies get a structured 400 (`error`,
 retry once; if the second attempt also 400s, surface to the owner.
 Omitted `booleanFilters` / `minMaxFilters` are normalised to `[]` / `{}`.
 Returns the saved row (`{ data: alert }`).
+
+### `autobuy_orders` entry format — exact shape, no `type` key
+
+There is **no `type` field** — the order kind is derived from which keys you
+send and the SIGN of the value. All numeric values are **strings**:
+
+| Kind          | Shape                                                        |
+|---------------|--------------------------------------------------------------|
+| Take profit   | `{ "trigger_p": "50",  "sell_p": "100" }` — trigger_p > 0    |
+| Stop loss     | `{ "trigger_p": "-25", "sell_p": "100" }` — trigger_p < 0    |
+| Trailing stop | `{ "trailing_p": "10", "sell_p": "100", "activation_p": "0" }` |
+
+`trigger_p` / `trailing_p` are percent moves from entry; `sell_p` is the % of
+the position to sell (0 < sell_p ≤ 100). Exactly one of `trigger_p` /
+`trailing_p` per entry.
+
+⚠️ Sending a `type` key or bare JSON **numbers** (`"trigger_p": 50`) is NOT
+rejected today: the buy and the armed orders still execute, but the owner's
+web UI fails to render that alert's Autobuy settings and shows *"invalid
+config"* with a Delete prompt. Send string values exactly as above.
 
 
 ### `launchpads` — closed whitelist
@@ -113,7 +133,7 @@ curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" \
 
 # Set autobuy size + TP/SL
 curl -s -X POST -H "Authorization: Bearer $FASOL_API_KEY" -H "Content-Type: application/json" \
-  -d '{"autobuy_amount":0.05,"autobuy_orders":[{"type":"take_profit","trigger_p":50,"sell_p":100}]}' \
+  -d '{"autobuy_amount":0.05,"autobuy_orders":[{"trigger_p":"50","sell_p":"100"},{"trigger_p":"-25","sell_p":"100"}]}' \
   "$FASOL_API_BASE_URL/alert/123/autobuy"
 
 # Disable autobuy (preserves the rest of the alert)
