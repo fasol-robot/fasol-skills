@@ -158,10 +158,6 @@ wallets) only if you want the autobuy to fire from a *different* wallet than
 the agent's own. This holds for both `POST /alert/{id}/autobuy` and the full
 `POST /alerts` / `PUT /alert/{id}` upsert.
 
-> ⏳ Ships with the next backend release. Until then, pass `ab_wallet`
-> explicitly if you need the autobuy on a specific wallet — the pre-release
-> default is the account's active wallet, not the agent's.
-
 ## Lifecycle gotchas
 
 - **Filter change clears match history.** `PUT /alert/:id` with a different

@@ -135,7 +135,7 @@ this ships, a 429 `sse_concurrent_limit` means you genuinely hold 5 live
 streams. Phantom lifetime is now ≤ ~60s worst-case instead of 15–30 min,
 and the reconnect path self-heals immediately.
 
-**Roll-out:** ⏳ ships with the next backend release.
+**Roll-out:** ✅ dev, ✅ prod (verified in prod logs 2026-07-07).
 
 ---
 
@@ -156,7 +156,8 @@ agent-for-wallet-X saw buys fire from their primary wallet instead of X.
 - Pass `ab_wallet` explicitly only to fire autobuy from a *different* owned
   wallet than the agent's.
 
-**Roll-out:** ⏳ ships with the next backend release (dev first).
+**Roll-out:** ✅ dev, ✅ prod (2026-07 release; shipped together with the
+2026-07-04 SSE fix).
 
 *Unrelated account note (not an API change): the active-agents-per-user cap
 was raised 3 → 10. If `POST /agents` returns `409 max N active agents`, that's
