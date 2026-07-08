@@ -1,613 +1,655 @@
 {
-  "$schema_version": 1,
-  "name": "fasol-agent",
-  "description": "Fasol Agent API skills — Solana trading on the Fasol platform via Bearer-key HTTP. The catalog is a discovery index for AI agents; each entry points to a self-contained sub-skill file in skills/.",
-  "skill_root": "fasol-agent/",
-  "monolith": "fasol-agent/SKILL.md",
-  "index": "fasol-agent/skills/INDEX.md",
-  "changelog": "fasol-agent/skills/changelog.md",
-  "auth": {
-    "type": "bearer",
-    "env_var": "FASOL_API_KEY",
-    "base_url_env_var": "FASOL_API_BASE_URL",
-    "register_url": "https://fasol.trade/agent",
-    "key_prefix": "fsl_live_"
+ "$schema_version": 1,
+ "name": "fasol-agent",
+ "description": "Fasol Agent API skills — Solana trading on the Fasol platform via Bearer-key HTTP. The catalog is a discovery index for AI agents; each entry points to a self-contained sub-skill file in skills/.",
+ "skill_root": "fasol-agent/",
+ "monolith": "fasol-agent/SKILL.md",
+ "index": "fasol-agent/skills/INDEX.md",
+ "changelog": "fasol-agent/skills/changelog.md",
+ "auth": {
+  "type": "bearer",
+  "env_var": "FASOL_API_KEY",
+  "base_url_env_var": "FASOL_API_BASE_URL",
+  "register_url": "https://fasol.trade/agent",
+  "key_prefix": "fsl_live_"
+ },
+ "categories": [
+  {
+   "slug": "trading",
+   "name": "Trading"
   },
-  "categories": [
-    { "slug": "trading",   "name": "Trading"             },
-    { "slug": "data",      "name": "Data & Stats"        },
-    { "slug": "monitor",   "name": "Live Streams"        },
-    { "slug": "analytics", "name": "Backtest & Discovery"},
-    { "slug": "alerts",    "name": "Alerts"              },
-    { "slug": "tracking",  "name": "Wallet Tracking"     },
-    { "slug": "identity",  "name": "Identity & Positions"}
-  ],
-  "skills": [
-    {
-      "slug": "swap",
-      "category": "trading",
-      "url": "skills/swap.md",
-      "title": "Instant market buy / sell",
-      "subtitle": "POST /swap — fires NOW at the current on-chain price. Optional ?wait=true for synchronous confirmation.",
-      "endpoint": "POST /swap",
-      "scope": "place_orders",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "Instant buy with amount_sol or instant sell with sell_p%",
-        "Optional synchronous wait (?wait=true) up to 60s",
-        "Custom slippage (slippage_p) overriding the user's saved defaults"
-      ],
-      "prompts": [
-        "Buy 0.1 SOL of this token now",
-        "Close my entire position on this coin",
-        "Mirror a wallet's buy with a 10% size ratio"
-      ]
-    },
-    {
-      "slug": "place-order",
-      "category": "trading",
-      "url": "skills/place-order.md",
-      "title": "Limit / TP / SL / trailing orders",
-      "subtitle": "POST /orders — trigger-based orders the engine fires when price meets the condition.",
-      "endpoint": "POST /orders",
-      "scope": "place_orders",
-      "tier": "standard",
-      "status": "stable",
-      "capabilities": [
-        "Absolute limit_buy / limit_sell with trigger_price",
-        "Percent-relative TP / SL / trailing computed against entry",
-        "Sell percentage from 0..100 of holdings"
-      ],
-      "prompts": [
-        "Set a limit buy when price drops to X",
-        "Add a TP at +30% and SL at -15% on this position",
-        "Set a trailing TP that activates after +50% and trails 30% pullback"
-      ]
-    },
-    {
-      "slug": "cancel-order",
-      "category": "trading",
-      "url": "skills/cancel-order.md",
-      "title": "Cancel one order by ID",
-      "subtitle": "DELETE /orders/:id — best-effort cancel. Idempotent on already-deactivated orders.",
-      "endpoint": "DELETE /orders/:id",
-      "scope": "cancel_orders",
-      "tier": "standard",
-      "status": "stable",
-      "capabilities": [
-        "Cancel any pending or sleeping order by ID",
-        "Safe to call on already-fired orders (no-op)"
-      ],
-      "prompts": [
-        "Cancel order ord_abc",
-        "Clean up TP / SL from a previous cycle"
-      ]
-    },
-    {
-      "slug": "list-orders",
-      "category": "trading",
-      "url": "skills/list-orders.md",
-      "title": "List open + sleeping orders",
-      "subtitle": "GET /orders or GET /coin/:ca/orders — see what's armed and what's lurking from past cycles.",
-      "endpoint": "GET /orders, GET /coin/:ca/orders",
-      "scope": "read_positions",
-      "tier": "standard",
-      "status": "stable",
-      "capabilities": [
-        "All orders on the bound wallet, both armed and sleeping",
-        "Filter to one coin via /coin/:ca/orders",
-        "source_kind / source_id ownership tags for safe cleanup"
-      ],
-      "prompts": [
-        "Show all my open orders",
-        "What TP/SL are armed on this coin?",
-        "Find sleeping TP/SL stale from previous cycles"
-      ]
-    },
-    {
-      "slug": "orders-tp-sl",
-      "category": "trading",
-      "url": "skills/orders-tp-sl.md",
-      "title": "TP / SL / trailing — persist and re-arm lifecycle",
-      "subtitle": "Critical reading for any looping strategy: fired orders persist and re-arm on the next buy of the same coin.",
-      "endpoint": "(applies to POST /orders + DELETE /orders/:id)",
-      "scope": "place_orders, cancel_orders",
-      "tier": "standard",
-      "status": "stable",
-      "capabilities": [
-        "Understand re-arm-on-next-buy semantics",
-        "Cleanup pattern: track IDs, cancel on cycle end",
-        "Survive process restart with persisted ID file or startup sweep"
-      ],
-      "prompts": [
-        "Why did my position close instantly after I bought again?",
-        "Build a copy-trader that doesn't get killed by stale TP/SL"
-      ]
-    },
-    {
-      "slug": "coin-stats",
-      "category": "data",
-      "url": "skills/coin-stats.md",
-      "title": "Current state of a coin",
-      "subtitle": "GET /coin/:ca/stats — full CoinStat snapshot (price, MC, liq, holders, dev hold, deployer, social flags, mayhem).",
-      "endpoint": "GET /coin/:ca/stats",
-      "scope": "read_coins",
-      "tier": "standard",
-      "status": "stable",
-      "capabilities": [
-        "~40 numeric + boolean + string fields per coin",
-        "Includes deployer aggregates so most decisions don't need a separate /dev call",
-        "Primary input for every trading decision"
-      ],
-      "prompts": [
-        "Get current stats for this coin",
-        "Check dev hold and top-10 concentration before buying"
-      ]
-    },
-    {
-      "slug": "candles",
-      "category": "data",
-      "url": "skills/candles.md",
-      "title": "OHLC candles — historical + last 5 min",
-      "subtitle": "GET /candles (historical, heavy) and GET /candles_fast (last 5 min, standard).",
-      "endpoint": "GET /coin/:ca/candles, GET /coin/:ca/candles_fast",
-      "scope": "read_coins",
-      "tier": "heavy / standard",
-      "status": "stable",
-      "capabilities": [
-        "1..3600s interval, up to 1000 candles per call (historical)",
-        "Cursor pagination via before / after",
-        "Sub-second freshness from Redis (fast variant, 1..300s interval)"
-      ],
-      "prompts": [
-        "Show me the last 30 minutes of 5s candles",
-        "Walk back through historical OHLC since this coin migrated"
-      ]
-    },
-    {
-      "slug": "snapshot-history",
-      "category": "data",
-      "url": "skills/snapshot-history.md",
-      "title": "Per-tick historical snapshots for one coin",
-      "subtitle": "GET /snapshot/coin/:ca/history — server auto-buckets to ≤1000 rows.",
-      "endpoint": "GET /snapshot/coin/:ca/history",
-      "scope": "read_coins",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "Trajectory of price / MC / liq / holders / vol / drop_from_ath_p",
-        "Auto-bucketed time series, 24h cap",
-        "Phantom-gate matches the alert engine"
-      ],
-      "prompts": [
-        "Show me the last hour trajectory of BONK",
-        "Plot the holders curve since launch"
-      ]
-    },
-    {
-      "slug": "snapshot-agg",
-      "category": "data",
-      "url": "skills/snapshot-agg.md",
-      "title": "Min/max/extremes for one coin in a window",
-      "subtitle": "GET /snapshot/coin/:ca/agg — single-row aggregate, very cheap.",
-      "endpoint": "GET /snapshot/coin/:ca/agg",
-      "scope": "read_coins",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "min/max for price, MC, liq, drop_from_ath_p",
-        "max for holders and vol_5m",
-        "snapshot_count for window coverage"
-      ],
-      "prompts": [
-        "What was the ATH market cap in the last 6 hours?",
-        "Did liquidity ever drop below 5k?"
-      ]
-    },
-    {
-      "slug": "snapshot-first-match",
-      "category": "data",
-      "url": "skills/snapshot-first-match.md",
-      "title": "When a condition first / last held for one coin",
-      "subtitle": "POST /snapshot/coin/:ca/first_match — find earliest or latest snapshot matching filters.",
-      "endpoint": "POST /snapshot/coin/:ca/first_match",
-      "scope": "read_coins",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "Direction first/last across a window",
-        "Same filter language as snapshot_scan / alert_simulate",
-        "Returns single row or null"
-      ],
-      "prompts": [
-        "When did this coin first cross 1M MC?",
-        "Last time liq was above 50k?"
-      ]
-    },
-    {
-      "slug": "snapshot-scan",
-      "category": "data",
-      "url": "skills/snapshot-scan.md",
-      "title": "Cross-coin discovery at a moment in time",
-      "subtitle": "POST /snapshot/scan — find coins matching filters right now (or at past T).",
-      "endpoint": "POST /snapshot/scan",
-      "scope": "read_coins",
-      "tier": "heavy",
-      "status": "stable",
-      "capabilities": [
-        "~60 numeric (min/max) filter columns",
-        "Boolean and launchpad filters",
-        "Auto-derived from same field map as alert_simulate"
-      ],
-      "prompts": [
-        "Find migrated pumpfun coins with liq > 50k and dev_hold < 5%",
-        "Discover coins matching my alert filter right now"
-      ]
-    },
-    {
-      "slug": "coin-price-stream",
-      "category": "monitor",
-      "url": "skills/coin-price-stream.md",
-      "title": "Live price ticks for one coin (SSE)",
-      "subtitle": "GET /agent_stream/coin/:ca — sub-second price ticks via SSE.",
-      "endpoint": "GET /agent_stream/coin/:ca",
-      "scope": "read_coins",
-      "tier": "sse",
-      "status": "stable",
-      "capabilities": [
-        "One event per parsed block (~400ms)",
-        "Survives pair migration (filter by coin_address)",
-        "15s heartbeat for proxy liveness"
-      ],
-      "prompts": [
-        "Stream live ticks for this coin to react sub-second",
-        "Watch a flip in real time"
-      ]
-    },
-    {
-      "slug": "coin-trade-stream",
-      "category": "monitor",
-      "url": "skills/coin-trade-stream.md",
-      "title": "Every swap on one coin (SSE)",
-      "subtitle": "GET /agent_stream/coin/:ca/trades — one event per swap, with size and per-wallet context.",
-      "endpoint": "GET /agent_stream/coin/:ca/trades",
-      "scope": "read_coins",
-      "tier": "sse",
-      "status": "stable",
-      "capabilities": [
-        "LiveTrade payload per swap (buy/sell, amount, price, wallet)",
-        "Compute rolling volume / VWAP / order-flow yourself",
-        "Server-side wallet-type classification on each trade"
-      ],
-      "prompts": [
-        "Compute 1m volume and buy/sell ratio",
-        "Watch maker count over time"
-      ]
-    },
-    {
-      "slug": "tx-stream",
-      "category": "monitor",
-      "url": "skills/tx-stream.md",
-      "title": "Live confirmation events for your wallet's swaps (SSE)",
-      "subtitle": "GET /agent_stream/tx — processed and confirmed events for every swap you fire.",
-      "endpoint": "GET /agent_stream/tx",
-      "scope": "read_positions",
-      "tier": "sse",
-      "status": "stable",
-      "capabilities": [
-        "Two events per swap: processed (~400ms) + confirmed (~3-7s)",
-        "Tells you the actual fill price, slippage, and tx hash",
-        "Closes the loop on /swap and /orders fires"
-      ],
-      "prompts": [
-        "Wait for my buy to confirm and tell me the fill price",
-        "Track every TP/SL fire on this wallet"
-      ]
-    },
-    {
-      "slug": "tracked-wallet-trades",
-      "category": "monitor",
-      "url": "skills/tracked-wallet-trades.md",
-      "title": "Tracked-wallet trade stream",
-      "subtitle": "Live SSE of every swap from the user's tracked wallets — the backbone of any copy-trader.",
-      "endpoint": "GET /agent_stream/tracked_wallet_trades",
-      "scope": "manage_tracking",
-      "tier": "sse",
-      "status": "stable",
-      "capabilities": [
-        "Subscribe to every buy/sell on tracked wallets in real time",
-        "Built-in trade-state classification (first_buy / buy_more / sell_part / sell_all / sell_air)",
-        "Server-side filtering by authenticated user_id"
-      ],
-      "prompts": [
-        "Mirror a smart-money wallet's buys at 10% size",
-        "Alert me when a tracked deployer wallet sells",
-        "Build a copy-trader strategy"
-      ]
-    },
-    {
-      "slug": "smart-money-stream",
-      "category": "monitor",
-      "url": "skills/smart-money-stream.md",
-      "title": "Smart Money trade stream",
-      "subtitle": "Live SSE of every swap by any wallet in Fasol's curated Smart Money cohort (global stream, optional ?wallets= filter).",
-      "endpoint": "GET /agent_stream/smart_money_trades",
-      "scope": "read_wallets",
-      "tier": "sse",
-      "status": "stable",
-      "capabilities": [
-        "Subscribe to every SM-cohort swap in real time (global firehose)",
-        "Same LiveTrade payload as tracked-wallet-trades (with cohort rank in group_id)",
-        "Optional server-side wallet allow-list via ?wallets= (up to 50)"
-      ],
-      "prompts": [
-        "Mirror the top-20 Smart Money wallets by rank",
-        "React when any SM wallet first-buys a new coin",
-        "Compute live volume from SM-only swaps"
-      ]
-    },
-    {
-      "slug": "calls-stream",
-      "category": "monitor",
-      "url": "skills/calls-stream.md",
-      "title": "Caller publications stream",
-      "subtitle": "Live SSE of caller 'calls' for callers the user follows. Same per-user feed the /callers UI page consumes.",
-      "endpoint": "GET /agent_stream/calls",
-      "scope": "read_alerts",
-      "tier": "sse",
-      "status": "stable",
-      "capabilities": [
-        "call_init backfill batch on connect (up to 30 most-recent calls)",
-        "call_new live publications + call_prices periodic price updates",
-        "Server-side dedup within (caller, coin) so reposts don't duplicate",
-        "Per-user filtering via the user's tb_user_caller_subscription"
-      ],
-      "prompts": [
-        "Mirror new calls from a specific followed caller at 5% size",
-        "Build a 'wait for the second caller' strategy on the same coin",
-        "Track ATH-after-call performance of callers I follow"
-      ]
-    },
-    {
-      "slug": "alert-match-stream",
-      "category": "monitor",
-      "url": "skills/alert-match-stream.md",
-      "title": "Live alert match + milestone SSE",
-      "subtitle": "GET /agent_stream/alert_matches — coins matching the user's alert filters + multiplier milestones.",
-      "endpoint": "GET /agent_stream/alert_matches",
-      "scope": "read_alerts",
-      "tier": "sse",
-      "status": "stable",
-      "capabilities": [
-        "Two event types: alert_match and alert_milestone",
-        "Optional ?alert_id= narrows to one alert",
-        "Server-side dedup; no duplicate (alert, coin) firings"
-      ],
-      "prompts": [
-        "React to my alert with my own trade logic instead of platform autobuy",
-        "Send me a notification on every alert milestone"
-      ]
-    },
-    {
-      "slug": "alert-simulate",
-      "category": "analytics",
-      "url": "skills/alert-simulate.md",
-      "title": "Alert backtest",
-      "subtitle": "Replay an alert filter against the last 1-5 days of db.coin_snapshot. Returns matched coins + ATH-multiplier hit rates (1.5x/2x/5x/10x).",
-      "endpoint": "POST /alert/simulate",
-      "scope": "read_alerts",
-      "tier": "heavy",
-      "status": "stable",
-      "capabilities": [
-        "Replay 1-5 days of historical snapshots against any AlertConfig",
-        "Per-coin ATH after trigger and trigger price",
-        "Aggregated 1.5x/2x/5x/10x hit-rate statistics",
-        "Same filter semantics as snapshot_scan (shared CH builder)"
-      ],
-      "prompts": [
-        "Would this alert filter have caught anything yesterday?",
-        "Backtest my Pump.fun + only_migrated + makers_5m >= 50 filter for the last week",
-        "Compare two alert configs by hit-rate over 3 days"
-      ]
-    },
-    {
-      "slug": "wallet-search",
-      "category": "analytics",
-      "url": "skills/wallet-search.md",
-      "title": "Discover wallets by profit / activity / behaviour",
-      "subtitle": "POST /wallet_search — find wallets matching a strategy profile (profit, hold pattern, sniper-share, etc.).",
-      "endpoint": "POST /wallet_search",
-      "scope": "read_wallets",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "Pre-filters from db.wallet (lifetime profit, win rate, sniper share, wallet type)",
-        "Post-filters from behavior (median hold, cycle count, sub-60s scalp rate)",
-        "Optional pf_share_48h (heavy CH JOIN)",
-        "5-min server-side cache on canonicalised body"
-      ],
-      "prompts": [
-        "Find top profit traders active in the last hour",
-        "Find slow-hold conviction wallets with cycle_count >= 30"
-      ]
-    },
-    {
-      "slug": "deployer",
-      "category": "analytics",
-      "url": "skills/deployer.md",
-      "title": "Deployer launch history",
-      "subtitle": "GET /dev/:deployer — last 50 launches + summary stats (launched/migrated count, recent ATH averages).",
-      "endpoint": "GET /dev/:deployer",
-      "scope": "read_dev_history",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "Per-token list with ATH, current MC, migration state",
-        "Aggregates: launched_count, migrated_count, migrated_p, lastN_avg_ath"
-      ],
-      "prompts": [
-        "Is this deployer a serial-rugger or do they migrate cleanly?",
-        "Show me what this dev launched in the past"
-      ]
-    },
-    {
-      "slug": "alerts-read",
-      "category": "alerts",
-      "url": "skills/alerts-read.md",
-      "title": "List and inspect alerts",
-      "subtitle": "GET /alerts, GET /alert/:id/stats, GET /alerts/triggered/:coin — read-only alert state.",
-      "endpoint": "GET /alerts, GET /alert/:id/stats, GET /alerts/triggered/:coin",
-      "scope": "read_alerts",
-      "tier": "standard / heavy / medium",
-      "status": "stable",
-      "capabilities": [
-        "List all alerts with triggered_count + hit-rate stats",
-        "Per-alert drill-down: coins matched + multipliers reached",
-        "Per-coin: which alerts matched this coin"
-      ],
-      "prompts": [
-        "Show all my alerts and their hit rates",
-        "Which alerts matched on this specific coin?"
-      ]
-    },
-    {
-      "slug": "alerts-write",
-      "category": "alerts",
-      "url": "skills/alerts-write.md",
-      "title": "Create / update / pause / autobuy alerts",
-      "subtitle": "Full CRUD + pause/unpause + Telegram toggle + autobuy config. Requires manage_alerts (not default-on).",
-      "endpoint": "POST /alerts, PUT /alert/:id, DELETE /alert/:id, POST /alert/:id/{pause,unpause,toggle-telegram,autobuy}",
-      "scope": "manage_alerts",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "Full AlertConfig body shape",
-        "Pause/unpause and autobuy-only shims for cheap mutations",
-        "Filter changes clear match history (server-enforced)"
-      ],
-      "prompts": [
-        "Create an alert for pumpfun migrated coins with vol_5m > 10k",
-        "Pause my noisy alert without losing its history",
-        "Enable autobuy 0.05 SOL with TP/SL on this alert"
-      ]
-    },
-    {
-      "slug": "tracked-wallets",
-      "category": "tracking",
-      "url": "skills/tracked-wallets.md",
-      "title": "Tracked wallets — CRUD + warm-up batch",
-      "subtitle": "Add / remove / group wallets, and warm up local state with the last ~50 swaps before subscribing.",
-      "endpoint": "GET POST PUT DELETE /tracked_wallets, GET /tracked_wallets/live_trades",
-      "scope": "manage_tracking",
-      "tier": "standard / heavy",
-      "status": "stable",
-      "capabilities": [
-        "Full CRUD over the user's watch list",
-        "Bulk add with group_id and notify flags",
-        "Heavy-tier warm-up batch (5 rpm — once on startup, then stream)"
-      ],
-      "prompts": [
-        "Add these 5 wallets to my 'snipers' group",
-        "Warm up local state with the last batch of tracked swaps"
-      ]
-    },
-    {
-      "slug": "wallet-groups",
-      "category": "tracking",
-      "url": "skills/wallet-groups.md",
-      "title": "Wallet groups — folders for tracked wallets",
-      "subtitle": "CRUD over user-defined groups (folders) like 'smart money', 'snipers', etc.",
-      "endpoint": "GET POST PUT DELETE /wallet_groups",
-      "scope": "manage_tracking",
-      "tier": "standard",
-      "status": "stable",
-      "capabilities": [
-        "Create / rename / re-colour groups",
-        "Delete is non-destructive — wallets become ungrouped"
-      ],
-      "prompts": [
-        "Create a 'whales' group",
-        "Rename a group"
-      ]
-    },
-    {
-      "slug": "get-scope",
-      "category": "identity",
-      "url": "skills/get-scope.md",
-      "title": "Identity + scopes + bound wallet",
-      "subtitle": "GET /scope — what this API key is allowed to do, and which wallet trades will fire on.",
-      "endpoint": "GET /scope",
-      "scope": "(always allowed)",
-      "tier": "standard",
-      "status": "stable",
-      "capabilities": [
-        "agent_id, agent_name, scopes, allowed_tools",
-        "Bound wallet address (your 'self' identifier)",
-        "412 with agent_wallet_unset / agent_wallet_invalid for unbound state"
-      ],
-      "prompts": [
-        "What can this API key do?",
-        "Which wallet will my swaps fire on?"
-      ]
-    },
-    {
-      "slug": "list-positions",
-      "category": "identity",
-      "url": "skills/list-positions.md",
-      "title": "Open positions on the bound wallet",
-      "subtitle": "GET /positions — current open positions, unrealised PnL.",
-      "endpoint": "GET /positions",
-      "scope": "read_positions",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "amount_coin, value_sol, value_usd per position",
-        "avg_buy_price_usd, current_price_usd, unrealised_pnl_sol, unrealised_pnl_p"
-      ],
-      "prompts": [
-        "What's my current exposure?",
-        "Did I forget any open positions from earlier?"
-      ]
-    },
-    {
-      "slug": "list-trades",
-      "category": "identity",
-      "url": "skills/list-trades.md",
-      "title": "Realised trade history — source of truth for PnL",
-      "subtitle": "GET /trades — every fill (orders engine + /swap + UI) with prices, fees, USD value.",
-      "endpoint": "GET /trades",
-      "scope": "read_positions",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "Filter by coin_address, from_ts, to_ts",
-        "Returns successful and failed trades alike",
-        "tx_type tells you origin: limit_buy, take_profit, agent_swap, qb, etc."
-      ],
-      "prompts": [
-        "Compute my realised PnL on this coin",
-        "List my last 50 trades"
-      ]
-    },
-    {
-      "slug": "wallet-balance",
-      "category": "identity",
-      "url": "skills/wallet-balance.md",
-      "title": "Bound-wallet SOL balance",
-      "subtitle": "GET /wallet_balance — live SOL balance with pre-computed USD.",
-      "endpoint": "GET /wallet_balance",
-      "scope": "read_positions",
-      "tier": "medium",
-      "status": "stable",
-      "capabilities": [
-        "sol_balance_lamports + sol_balance + sol_balance_usd",
-        "Current sol_price_usd alongside"
-      ],
-      "prompts": [
-        "How much SOL do I have?",
-        "Can I afford this 0.1 SOL buy plus fees?"
-      ]
-    }
-  ]
+  {
+   "slug": "data",
+   "name": "Data & Stats"
+  },
+  {
+   "slug": "monitor",
+   "name": "Live Streams"
+  },
+  {
+   "slug": "analytics",
+   "name": "Backtest & Discovery"
+  },
+  {
+   "slug": "alerts",
+   "name": "Alerts"
+  },
+  {
+   "slug": "tracking",
+   "name": "Wallet Tracking"
+  },
+  {
+   "slug": "identity",
+   "name": "Identity & Positions"
+  }
+ ],
+ "skills": [
+  {
+   "slug": "swap",
+   "category": "trading",
+   "url": "skills/swap.md",
+   "title": "Instant market buy / sell",
+   "subtitle": "POST /swap — fires NOW at the current on-chain price. Optional ?wait=true for synchronous confirmation.",
+   "endpoint": "POST /swap",
+   "scope": "place_orders",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "Instant buy with amount_sol or instant sell with sell_p%",
+    "Optional synchronous wait (?wait=true) up to 60s",
+    "Custom slippage (slippage_p) overriding the user's saved defaults"
+   ],
+   "prompts": [
+    "Buy 0.1 SOL of this token now",
+    "Close my entire position on this coin",
+    "Mirror a wallet's buy with a 10% size ratio"
+   ]
+  },
+  {
+   "slug": "place-order",
+   "category": "trading",
+   "url": "skills/place-order.md",
+   "title": "Limit / TP / SL / trailing orders",
+   "subtitle": "POST /orders — trigger-based orders the engine fires when price meets the condition.",
+   "endpoint": "POST /orders",
+   "scope": "place_orders",
+   "tier": "standard",
+   "status": "stable",
+   "capabilities": [
+    "Absolute limit_buy / limit_sell with trigger_price",
+    "Percent-relative TP / SL / trailing computed against entry",
+    "Sell percentage from 0..100 of holdings"
+   ],
+   "prompts": [
+    "Set a limit buy when price drops to X",
+    "Add a TP at +30% and SL at -15% on this position",
+    "Set a trailing TP that activates after +50% and trails 30% pullback"
+   ]
+  },
+  {
+   "slug": "cancel-order",
+   "category": "trading",
+   "url": "skills/cancel-order.md",
+   "title": "Cancel one order by ID",
+   "subtitle": "DELETE /orders/:id — best-effort cancel. Idempotent on already-deactivated orders.",
+   "endpoint": "DELETE /orders/:id",
+   "scope": "cancel_orders",
+   "tier": "standard",
+   "status": "stable",
+   "capabilities": [
+    "Cancel any pending or sleeping order by ID",
+    "Safe to call on already-fired orders (no-op)"
+   ],
+   "prompts": [
+    "Cancel order ord_abc",
+    "Clean up TP / SL from a previous cycle"
+   ]
+  },
+  {
+   "slug": "list-orders",
+   "category": "trading",
+   "url": "skills/list-orders.md",
+   "title": "List open + sleeping orders",
+   "subtitle": "GET /orders or GET /coin/:ca/orders — see what's armed and what's lurking from past cycles.",
+   "endpoint": "GET /orders, GET /coin/:ca/orders",
+   "scope": "read_positions",
+   "tier": "standard",
+   "status": "stable",
+   "capabilities": [
+    "All orders on the bound wallet, both armed and sleeping",
+    "Filter to one coin via /coin/:ca/orders",
+    "source_kind / source_id ownership tags for safe cleanup"
+   ],
+   "prompts": [
+    "Show all my open orders",
+    "What TP/SL are armed on this coin?",
+    "Find sleeping TP/SL stale from previous cycles"
+   ]
+  },
+  {
+   "slug": "orders-tp-sl",
+   "category": "trading",
+   "url": "skills/orders-tp-sl.md",
+   "title": "TP / SL / trailing — persist and re-arm lifecycle",
+   "subtitle": "Critical reading for any looping strategy: fired orders persist and re-arm on the next buy of the same coin.",
+   "endpoint": "(applies to POST /orders + DELETE /orders/:id)",
+   "scope": "place_orders, cancel_orders",
+   "tier": "standard",
+   "status": "stable",
+   "capabilities": [
+    "Understand re-arm-on-next-buy semantics",
+    "Cleanup pattern: track IDs, cancel on cycle end",
+    "Survive process restart with persisted ID file or startup sweep"
+   ],
+   "prompts": [
+    "Why did my position close instantly after I bought again?",
+    "Build a copy-trader that doesn't get killed by stale TP/SL"
+   ]
+  },
+  {
+   "slug": "coin-stats",
+   "category": "data",
+   "url": "skills/coin-stats.md",
+   "title": "Current state of a coin",
+   "subtitle": "GET /coin/:ca/stats — full CoinStat snapshot (price, MC, liq, holders, dev hold, deployer, social flags, mayhem).",
+   "endpoint": "GET /coin/:ca/stats",
+   "scope": "read_coins",
+   "tier": "standard",
+   "status": "stable",
+   "capabilities": [
+    "~40 numeric + boolean + string fields per coin",
+    "Includes deployer aggregates so most decisions don't need a separate /dev call",
+    "Primary input for every trading decision"
+   ],
+   "prompts": [
+    "Get current stats for this coin",
+    "Check dev hold and top-10 concentration before buying"
+   ]
+  },
+  {
+   "slug": "candles",
+   "category": "data",
+   "url": "skills/candles.md",
+   "title": "OHLC candles — historical + last 5 min",
+   "subtitle": "GET /candles (historical, heavy) and GET /candles_fast (last 5 min, standard).",
+   "endpoint": "GET /coin/:ca/candles, GET /coin/:ca/candles_fast",
+   "scope": "read_coins",
+   "tier": "heavy / standard",
+   "status": "stable",
+   "capabilities": [
+    "1..3600s interval, up to 1000 candles per call (historical)",
+    "Cursor pagination via before / after",
+    "Sub-second freshness from Redis (fast variant, 1..300s interval)"
+   ],
+   "prompts": [
+    "Show me the last 30 minutes of 5s candles",
+    "Walk back through historical OHLC since this coin migrated"
+   ]
+  },
+  {
+   "slug": "snapshot-history",
+   "category": "data",
+   "url": "skills/snapshot-history.md",
+   "title": "Per-tick historical snapshots for one coin",
+   "subtitle": "GET /snapshot/coin/:ca/history — server auto-buckets to ≤1000 rows.",
+   "endpoint": "GET /snapshot/coin/:ca/history",
+   "scope": "read_coins",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "Trajectory of price / MC / liq / holders / vol / drop_from_ath_p",
+    "Auto-bucketed time series, 24h cap",
+    "Phantom-gate matches the alert engine"
+   ],
+   "prompts": [
+    "Show me the last hour trajectory of BONK",
+    "Plot the holders curve since launch"
+   ]
+  },
+  {
+   "slug": "snapshot-agg",
+   "category": "data",
+   "url": "skills/snapshot-agg.md",
+   "title": "Min/max/extremes for one coin in a window",
+   "subtitle": "GET /snapshot/coin/:ca/agg — single-row aggregate, very cheap.",
+   "endpoint": "GET /snapshot/coin/:ca/agg",
+   "scope": "read_coins",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "min/max for price, MC, liq, drop_from_ath_p",
+    "max for holders and vol_5m",
+    "snapshot_count for window coverage"
+   ],
+   "prompts": [
+    "What was the ATH market cap in the last 6 hours?",
+    "Did liquidity ever drop below 5k?"
+   ]
+  },
+  {
+   "slug": "snapshot-first-match",
+   "category": "data",
+   "url": "skills/snapshot-first-match.md",
+   "title": "When a condition first / last held for one coin",
+   "subtitle": "POST /snapshot/coin/:ca/first_match — find earliest or latest snapshot matching filters.",
+   "endpoint": "POST /snapshot/coin/:ca/first_match",
+   "scope": "read_coins",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "Direction first/last across a window",
+    "Same filter language as snapshot_scan / alert_simulate",
+    "Returns single row or null"
+   ],
+   "prompts": [
+    "When did this coin first cross 1M MC?",
+    "Last time liq was above 50k?"
+   ]
+  },
+  {
+   "slug": "snapshot-scan",
+   "category": "data",
+   "url": "skills/snapshot-scan.md",
+   "title": "Cross-coin discovery at a moment in time",
+   "subtitle": "POST /snapshot/scan — find coins matching filters right now (or at past T).",
+   "endpoint": "POST /snapshot/scan",
+   "scope": "read_coins",
+   "tier": "heavy",
+   "status": "stable",
+   "capabilities": [
+    "~60 numeric (min/max) filter columns",
+    "Boolean and launchpad filters",
+    "Auto-derived from same field map as alert_simulate"
+   ],
+   "prompts": [
+    "Find migrated pumpfun coins with liq > 50k and dev_hold < 5%",
+    "Discover coins matching my alert filter right now"
+   ]
+  },
+  {
+   "slug": "coin-price-stream",
+   "category": "monitor",
+   "url": "skills/coin-price-stream.md",
+   "title": "Live price ticks for one coin (SSE)",
+   "subtitle": "GET /agent_stream/coin/:ca — sub-second price ticks via SSE.",
+   "endpoint": "GET /agent_stream/coin/:ca",
+   "scope": "read_coins",
+   "tier": "sse",
+   "status": "stable",
+   "capabilities": [
+    "One event per parsed block (~400ms)",
+    "Survives pair migration (filter by coin_address)",
+    "15s heartbeat for proxy liveness"
+   ],
+   "prompts": [
+    "Stream live ticks for this coin to react sub-second",
+    "Watch a flip in real time"
+   ]
+  },
+  {
+   "slug": "coin-trade-stream",
+   "category": "monitor",
+   "url": "skills/coin-trade-stream.md",
+   "title": "Every swap on one coin (SSE)",
+   "subtitle": "GET /agent_stream/coin/:ca/trades — one event per swap, with size and per-wallet context.",
+   "endpoint": "GET /agent_stream/coin/:ca/trades",
+   "scope": "read_coins",
+   "tier": "sse",
+   "status": "stable",
+   "capabilities": [
+    "LiveTrade payload per swap (buy/sell, amount, price, wallet)",
+    "Compute rolling volume / VWAP / order-flow yourself",
+    "Server-side wallet-type classification on each trade"
+   ],
+   "prompts": [
+    "Compute 1m volume and buy/sell ratio",
+    "Watch maker count over time"
+   ]
+  },
+  {
+   "slug": "tx-stream",
+   "category": "monitor",
+   "url": "skills/tx-stream.md",
+   "title": "Live confirmation events for your wallet's swaps (SSE)",
+   "subtitle": "GET /agent_stream/tx — processed and confirmed events for every swap you fire.",
+   "endpoint": "GET /agent_stream/tx",
+   "scope": "read_positions",
+   "tier": "sse",
+   "status": "stable",
+   "capabilities": [
+    "Two events per swap: processed (~400ms) + confirmed (~3-7s)",
+    "Tells you the actual fill price, slippage, and tx hash",
+    "Closes the loop on /swap and /orders fires"
+   ],
+   "prompts": [
+    "Wait for my buy to confirm and tell me the fill price",
+    "Track every TP/SL fire on this wallet"
+   ]
+  },
+  {
+   "slug": "tracked-wallet-trades",
+   "category": "monitor",
+   "url": "skills/tracked-wallet-trades.md",
+   "title": "Tracked-wallet trade stream",
+   "subtitle": "Live SSE of every swap from the user's tracked wallets — the backbone of any copy-trader.",
+   "endpoint": "GET /agent_stream/tracked_wallet_trades",
+   "scope": "manage_tracking",
+   "tier": "sse",
+   "status": "stable",
+   "capabilities": [
+    "Subscribe to every buy/sell on tracked wallets in real time",
+    "Built-in trade-state classification (first_buy / buy_more / sell_part / sell_all / sell_air)",
+    "Server-side filtering by authenticated user_id"
+   ],
+   "prompts": [
+    "Mirror a smart-money wallet's buys at 10% size",
+    "Alert me when a tracked deployer wallet sells",
+    "Build a copy-trader strategy"
+   ]
+  },
+  {
+   "slug": "smart-money-stream",
+   "category": "monitor",
+   "url": "skills/smart-money-stream.md",
+   "title": "Smart Money trade stream",
+   "subtitle": "Live SSE of every swap by any wallet in Fasol's curated Smart Money cohort (global stream, optional ?wallets= filter).",
+   "endpoint": "GET /agent_stream/smart_money_trades",
+   "scope": "read_wallets",
+   "tier": "sse",
+   "status": "stable",
+   "capabilities": [
+    "Subscribe to every SM-cohort swap in real time (global firehose)",
+    "Same LiveTrade payload as tracked-wallet-trades (with cohort rank in group_id)",
+    "Optional server-side wallet allow-list via ?wallets= (up to 50)"
+   ],
+   "prompts": [
+    "Mirror the top-20 Smart Money wallets by rank",
+    "React when any SM wallet first-buys a new coin",
+    "Compute live volume from SM-only swaps"
+   ]
+  },
+  {
+   "slug": "calls-stream",
+   "category": "monitor",
+   "url": "skills/calls-stream.md",
+   "title": "Caller publications stream",
+   "subtitle": "Live SSE of caller 'calls' for callers the user follows. Same per-user feed the /callers UI page consumes.",
+   "endpoint": "GET /agent_stream/calls",
+   "scope": "read_alerts",
+   "tier": "sse",
+   "status": "stable",
+   "capabilities": [
+    "call_init backfill batch on connect (up to 30 most-recent calls)",
+    "call_new live publications + call_prices periodic price updates",
+    "Server-side dedup within (caller, coin) so reposts don't duplicate",
+    "Per-user filtering via the user's tb_user_caller_subscription"
+   ],
+   "prompts": [
+    "Mirror new calls from a specific followed caller at 5% size",
+    "Build a 'wait for the second caller' strategy on the same coin",
+    "Track ATH-after-call performance of callers I follow"
+   ]
+  },
+  {
+   "slug": "alert-match-stream",
+   "category": "monitor",
+   "url": "skills/alert-match-stream.md",
+   "title": "Live alert match + milestone SSE",
+   "subtitle": "GET /agent_stream/alert_matches — coins matching the user's alert filters + multiplier milestones.",
+   "endpoint": "GET /agent_stream/alert_matches",
+   "scope": "read_alerts",
+   "tier": "sse",
+   "status": "stable",
+   "capabilities": [
+    "Two event types: alert_match and alert_milestone",
+    "Optional ?alert_id= narrows to one alert",
+    "Server-side dedup; no duplicate (alert, coin) firings"
+   ],
+   "prompts": [
+    "React to my alert with my own trade logic instead of platform autobuy",
+    "Send me a notification on every alert milestone"
+   ]
+  },
+  {
+   "slug": "alert-simulate",
+   "category": "analytics",
+   "url": "skills/alert-simulate.md",
+   "title": "Alert backtest",
+   "subtitle": "Replay an alert filter against the last 1-5 days of db.coin_snapshot. Returns matched coins + ATH-multiplier hit rates (1.5x/2x/5x/10x).",
+   "endpoint": "POST /alert/simulate",
+   "scope": "read_alerts",
+   "tier": "heavy",
+   "status": "stable",
+   "capabilities": [
+    "Replay 1-5 days of historical snapshots against any AlertConfig",
+    "Per-coin ATH after trigger and trigger price",
+    "Aggregated 1.5x/2x/5x/10x hit-rate statistics",
+    "Same filter semantics as snapshot_scan (shared CH builder)"
+   ],
+   "prompts": [
+    "Would this alert filter have caught anything yesterday?",
+    "Backtest my Pump.fun + only_migrated + makers_5m >= 50 filter for the last week",
+    "Compare two alert configs by hit-rate over 3 days"
+   ]
+  },
+  {
+   "slug": "wallet-search",
+   "category": "analytics",
+   "url": "skills/wallet-search.md",
+   "title": "Discover wallets by profit / activity / behaviour",
+   "subtitle": "POST /wallet_search — find wallets matching a strategy profile (profit, hold pattern, sniper-share, etc.).",
+   "endpoint": "POST /wallet_search",
+   "scope": "read_wallets",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "Pre-filters from db.wallet (lifetime profit, win rate, sniper share, wallet type)",
+    "Post-filters from behavior (median hold, cycle count, sub-60s scalp rate)",
+    "Optional pf_share_48h (heavy CH JOIN)",
+    "5-min server-side cache on canonicalised body"
+   ],
+   "prompts": [
+    "Find top profit traders active in the last hour",
+    "Find slow-hold conviction wallets with cycle_count >= 30"
+   ]
+  },
+  {
+   "slug": "wallet-trades",
+   "category": "analytics",
+   "url": "skills/wallet-trades.md",
+   "title": "Per-wallet trade performance (how did its buys do?)",
+   "subtitle": "GET /wallet/{wallet}/trades — per-coin PnL fold of any wallet's swaps: SOL in/out, balance, mark-to-market PnL. ⏳ next backend release.",
+   "endpoint": "GET /wallet/{wallet}/trades",
+   "scope": "read_wallets",
+   "tier": "heavy",
+   "status": "pending_release",
+   "capabilities": [
+    "Per-coin realised + mark-to-market PnL over 1d/7d/30d/90d windows",
+    "Entry price (in_sol/in_coin), buy/sell counts, first/last tx timestamps",
+    "Any Solana wallet — public analytics, not limited to tracked wallets",
+    "Server-cached 30 s, shared with the web wallet drawer"
+   ],
+   "prompts": [
+    "How did the tokens this tracked wallet bought last 30d perform?",
+    "Win-rate and net PnL of wallet X this week"
+   ]
+  },
+  {
+   "slug": "deployer",
+   "category": "analytics",
+   "url": "skills/deployer.md",
+   "title": "Deployer launch history",
+   "subtitle": "GET /dev/:deployer — last 50 launches + summary stats (launched/migrated count, recent ATH averages).",
+   "endpoint": "GET /dev/:deployer",
+   "scope": "read_dev_history",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "Per-token list with ATH, current MC, migration state",
+    "Aggregates: launched_count, migrated_count, migrated_p, lastN_avg_ath"
+   ],
+   "prompts": [
+    "Is this deployer a serial-rugger or do they migrate cleanly?",
+    "Show me what this dev launched in the past"
+   ]
+  },
+  {
+   "slug": "alerts-read",
+   "category": "alerts",
+   "url": "skills/alerts-read.md",
+   "title": "List and inspect alerts",
+   "subtitle": "GET /alerts, GET /alert/:id/stats, GET /alerts/triggered/:coin — read-only alert state.",
+   "endpoint": "GET /alerts, GET /alert/:id/stats, GET /alerts/triggered/:coin",
+   "scope": "read_alerts",
+   "tier": "standard / heavy / medium",
+   "status": "stable",
+   "capabilities": [
+    "List all alerts with triggered_count + hit-rate stats",
+    "Per-alert drill-down: coins matched + multipliers reached",
+    "Per-coin: which alerts matched this coin"
+   ],
+   "prompts": [
+    "Show all my alerts and their hit rates",
+    "Which alerts matched on this specific coin?"
+   ]
+  },
+  {
+   "slug": "alerts-write",
+   "category": "alerts",
+   "url": "skills/alerts-write.md",
+   "title": "Create / update / pause / autobuy alerts",
+   "subtitle": "Full CRUD + pause/unpause + Telegram toggle + autobuy config. Requires manage_alerts (not default-on).",
+   "endpoint": "POST /alerts, PUT /alert/:id, DELETE /alert/:id, POST /alert/:id/{pause,unpause,toggle-telegram,autobuy}",
+   "scope": "manage_alerts",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "Full AlertConfig body shape",
+    "Pause/unpause and autobuy-only shims for cheap mutations",
+    "Filter changes clear match history (server-enforced)"
+   ],
+   "prompts": [
+    "Create an alert for pumpfun migrated coins with vol_5m > 10k",
+    "Pause my noisy alert without losing its history",
+    "Enable autobuy 0.05 SOL with TP/SL on this alert"
+   ]
+  },
+  {
+   "slug": "tracked-wallets",
+   "category": "tracking",
+   "url": "skills/tracked-wallets.md",
+   "title": "Tracked wallets — CRUD + warm-up batch",
+   "subtitle": "Add / remove / group wallets, and warm up local state with the last ~50 swaps before subscribing.",
+   "endpoint": "GET POST PUT DELETE /tracked_wallets, GET /tracked_wallets/live_trades",
+   "scope": "manage_tracking",
+   "tier": "standard / heavy",
+   "status": "stable",
+   "capabilities": [
+    "Full CRUD over the user's watch list",
+    "Bulk add with group_id and notify flags",
+    "Heavy-tier warm-up batch (5 rpm — once on startup, then stream)"
+   ],
+   "prompts": [
+    "Add these 5 wallets to my 'snipers' group",
+    "Warm up local state with the last batch of tracked swaps"
+   ]
+  },
+  {
+   "slug": "wallet-groups",
+   "category": "tracking",
+   "url": "skills/wallet-groups.md",
+   "title": "Wallet groups — folders for tracked wallets",
+   "subtitle": "CRUD over user-defined groups (folders) like 'smart money', 'snipers', etc.",
+   "endpoint": "GET POST PUT DELETE /wallet_groups",
+   "scope": "manage_tracking",
+   "tier": "standard",
+   "status": "stable",
+   "capabilities": [
+    "Create / rename / re-colour groups",
+    "Delete is non-destructive — wallets become ungrouped"
+   ],
+   "prompts": [
+    "Create a 'whales' group",
+    "Rename a group"
+   ]
+  },
+  {
+   "slug": "get-scope",
+   "category": "identity",
+   "url": "skills/get-scope.md",
+   "title": "Identity + scopes + bound wallet",
+   "subtitle": "GET /scope — what this API key is allowed to do, and which wallet trades will fire on.",
+   "endpoint": "GET /scope",
+   "scope": "(always allowed)",
+   "tier": "standard",
+   "status": "stable",
+   "capabilities": [
+    "agent_id, agent_name, scopes, allowed_tools",
+    "Bound wallet address (your 'self' identifier)",
+    "412 with agent_wallet_unset / agent_wallet_invalid for unbound state"
+   ],
+   "prompts": [
+    "What can this API key do?",
+    "Which wallet will my swaps fire on?"
+   ]
+  },
+  {
+   "slug": "list-positions",
+   "category": "identity",
+   "url": "skills/list-positions.md",
+   "title": "Open positions on the bound wallet",
+   "subtitle": "GET /positions — current open positions, unrealised PnL.",
+   "endpoint": "GET /positions",
+   "scope": "read_positions",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "amount_coin, value_sol, value_usd per position",
+    "avg_buy_price_usd, current_price_usd, unrealised_pnl_sol, unrealised_pnl_p"
+   ],
+   "prompts": [
+    "What's my current exposure?",
+    "Did I forget any open positions from earlier?"
+   ]
+  },
+  {
+   "slug": "list-trades",
+   "category": "identity",
+   "url": "skills/list-trades.md",
+   "title": "Realised trade history — source of truth for PnL",
+   "subtitle": "GET /trades — every fill (orders engine + /swap + UI) with prices, fees, USD value.",
+   "endpoint": "GET /trades",
+   "scope": "read_positions",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "Filter by coin_address, from_ts, to_ts",
+    "Returns successful and failed trades alike",
+    "tx_type tells you origin: limit_buy, take_profit, agent_swap, qb, etc."
+   ],
+   "prompts": [
+    "Compute my realised PnL on this coin",
+    "List my last 50 trades"
+   ]
+  },
+  {
+   "slug": "wallet-balance",
+   "category": "identity",
+   "url": "skills/wallet-balance.md",
+   "title": "Bound-wallet SOL balance",
+   "subtitle": "GET /wallet_balance — live SOL balance with pre-computed USD.",
+   "endpoint": "GET /wallet_balance",
+   "scope": "read_positions",
+   "tier": "medium",
+   "status": "stable",
+   "capabilities": [
+    "sol_balance_lamports + sol_balance + sol_balance_usd",
+    "Current sol_price_usd alongside"
+   ],
+   "prompts": [
+    "How much SOL do I have?",
+    "Can I afford this 0.1 SOL buy plus fees?"
+   ]
+  }
+ ]
 }

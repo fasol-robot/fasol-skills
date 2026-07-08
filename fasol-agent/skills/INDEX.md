@@ -68,6 +68,7 @@ detail lives here.
 |---|---|
 | [`alert-simulate.md`](alert-simulate.md) | `POST /alert/simulate` — replay an alert filter against last 1-5 days of `db.coin_snapshot`. |
 | [`wallet-search.md`](wallet-search.md) | `POST /wallet_search` — discover wallets by profit / activity / behaviour. |
+| [`wallet-trades.md`](wallet-trades.md) | `GET /wallet/{wallet}/trades` — per-coin PnL performance of any wallet's buys. ⏳ next release. |
 | [`deployer.md`](deployer.md) | `GET /dev/:deployer` — full history of a deployer's launches. |
 
 ### alerts (read + write)

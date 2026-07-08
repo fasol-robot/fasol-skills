@@ -73,6 +73,15 @@ Polling it every few seconds will:
 
 Don't.
 
+## Historical performance of a tracked wallet's buys
+
+The live feed and `live_trades` batch only cover *recent* activity. For
+"how did the coins this wallet bought actually perform" — per-coin PnL,
+win-rate, entry prices over 1d–90d — use
+[wallet-trades](wallet-trades.md) (`GET /wallet/{wallet}/trades`,
+⏳ next release): one backfill call per wallet, then keep counting
+incrementally from the SSE stream.
+
 ## Pattern — bootstrap + stream
 
 ```js
