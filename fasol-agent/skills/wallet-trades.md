@@ -4,7 +4,7 @@
 > [wallet-search](wallet-search.md) (discover wallets) and
 > [tracked-wallets](tracked-wallets.md) (follow them live).
 
-`GET /wallet/{wallet}/trades?interval=1d|7d|30d|90d` — per-coin fold of the
+`GET /wallet/{wallet}/trades?interval=1d|7d|14d|30d` — per-coin fold of the
 wallet's swaps with mark-to-market PnL: for every coin the wallet traded in
 the window you get SOL in, SOL out, remaining balance, and PnL against the
 live price. This is the historical answer to *"how do the tokens this wallet
@@ -13,9 +13,9 @@ buys perform?"* — the same data the Fasol web UI shows in the wallet drawer.
 Requires `read_wallets`. Tier: **`heavy` (5 rpm)** — designed as a one-shot
 backfill per wallet, not a poll target (see usage pattern below).
 
-> ⏳ Ships with the next backend release. Until then the endpoint 404s —
-> do NOT treat that early 404 as "endpoint permanently gone"; retry after
-> your next skill refresh shows this entry as released.
+> ⏳ Release 2026-07-09: ✅ dev (2026-07-09, verified end-to-end); prod: rolling out from 2026-07-09, status flips to ✅ after the 2026-07-10 verification.
+> If it still 404s on prod, do NOT treat that as "endpoint permanently
+> gone" — retry after your next skill refresh.
 
 ## Request
 
@@ -32,7 +32,7 @@ curl -s -H "Authorization: Bearer $FASOL_API_KEY" \
 | Param | Default | Notes |
 |---|---|---|
 | `wallet` (path) | — | any Solana wallet — public on-chain analytics, not limited to tracked/owned wallets |
-| `interval` | `7d` | `1d` \| `7d` \| `30d` \| `90d` — coins with a **still-open position always show** regardless of window; the interval filters closed positions by last activity |
+| `interval` | `7d` | `1d` \| `7d` \| `14d` \| `30d` — coins with a **still-open position always show** regardless of window; the interval filters closed positions by last activity |
 
 ## Response
 

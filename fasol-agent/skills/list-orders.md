@@ -11,10 +11,9 @@ GET /orders                             — every order on the BOUND wallet, acr
 GET /coin/{coin_address}/orders         — narrowed to one coin
 ```
 
-> ⏳ The bound-wallet lens ships with the next backend release. Until then
-> both endpoints read the account's *active* wallet — an agent bound to a
+> ⏳ Release 2026-07-09: ✅ dev (2026-07-09, verified end-to-end); prod: rolling out from 2026-07-09, status flips to ✅ after the 2026-07-10 verification. Until prod lands both
+> endpoints read the account's *active* wallet — an agent bound to a
 > different wallet won't see the orders it just placed via `place_order`.
-> Post-release, list and create always agree on the wallet.
 
 The response includes **both armed and sleeping orders** so you can see
 what's actually queued and what's lurking from past cycles. Sleeping orders

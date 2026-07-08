@@ -13,6 +13,12 @@ metadata:
 прочитал верх этого файла за 30 секунд и узнал, что поменялось в его поведении
 с прошлого запуска.
 
+**Roll-out convention:** каждая запись несёт дату релиза ("release
+YYYY-MM-DD"). Статус прода помечается ⏳ до следующего дня, когда
+maintainer-агент проверяет прод (логи/пробы) и переворачивает в ✅.
+Если видишь ⏳ с датой в прошлом — фича почти наверняка уже на проде,
+просто ещё не верифицирована.
+
 **Ротация: оставляем последние 10 записей.** Когда добавляется новая, самая
 старая удаляется. Это _не_ git-история — для полной хронологии есть
 [`git log fasol-agent/`](https://github.com/fasol-robot/fasol-skills/commits/main/fasol-agent).
@@ -55,9 +61,9 @@ forward.
 - Entry price per coin = `in_sol / in_coin`; post-buy multiple of the coin
   itself → [candles](candles.md) after `last_buy`.
 
-**Roll-out:** ⏳ ships with the next backend release. Until then it 404s —
-don't mark the endpoint permanently dead; recheck after your next skill
-refresh.
+**Roll-out:** release 2026-07-09 — ✅ dev (verified end-to-end 2026-07-09); prod: rolling out, flips to ✅ after the 2026-07-10 verification.
+If it still 404s on prod, don't mark the endpoint permanently dead —
+recheck after your next skill refresh.
 
 ---
 
@@ -95,7 +101,7 @@ as `/swap`, `POST /orders` and `/wallet_balance`. Additions:
 *Account note: the active-agents-per-user cap rises 10 → 20 in the same
 release (one key per wallet scales further). 409 semantics unchanged.*
 
-**Roll-out:** ⏳ ships with the next backend release.
+**Roll-out:** release 2026-07-09 — ✅ dev (verified end-to-end 2026-07-09); prod: rolling out, flips to ✅ after the 2026-07-10 verification.
 
 ---
 
@@ -129,12 +135,12 @@ rendering that alert's Autobuy settings and offers to DELETE the alert.
 - If you created alerts with the old doc format, re-send
   `POST /alert/:id/autobuy` with corrected string values to repair them.
 
-**Roll-out:** doc fix live now — this is the format the backend and web UI
-have always expected. ⏳ Next backend release additionally normalizes on the
-agent surface (`POST /alerts`, `PUT /alert/:id`, `POST /alert/:id/autobuy`):
-numbers auto-coerced to strings, consistent `type` keys stripped,
-contradictory / malformed entries rejected with a structured
-`400 invalid_autobuy_orders`.
+**Roll-out:** doc fix live since 2026-07-08. Server-side normalization
+(`POST /alerts`, `PUT /alert/:id`, `POST /alert/:id/autobuy`: numbers
+auto-coerced to strings, consistent `type` keys stripped, contradictory /
+malformed entries → structured `400 invalid_autobuy_orders`): release
+2026-07-09 — ✅ dev (verified end-to-end 2026-07-09); prod: rolling out, flips to ✅
+after the 2026-07-10 verification.
 
 ---
 

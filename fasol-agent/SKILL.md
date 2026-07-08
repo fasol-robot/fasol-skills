@@ -175,12 +175,10 @@ at create-time. This is a hard server-side boundary, not advice:
   filtering needed. `list_trades` additionally accepts `?wallet=<addr|all>`
   for another owned wallet / the account-wide view.
 
-  > ⏳ Ships with the next backend release. Until then: `/positions` and
-  > `/orders` return the account's *active* wallet (whatever the owner has
-  > selected in the UI) and `/trades` returns ALL wallets with no `wallet`
-  > field to filter on — recognise your own trades via `source_kind ===
-  > "agent"` / `tx_type === "agent_swap"` and treat cross-wallet rows as
-  > noise until the release lands.
+  > ⏳ Release 2026-07-09: ✅ dev (2026-07-09, verified end-to-end); prod: rolling out from 2026-07-09, status flips to ✅ after the 2026-07-10 verification. Until prod lands:
+  > `/positions` and `/orders` return the account's *active* wallet and
+  > `/trades` returns ALL wallets with no `wallet` field — recognise your
+  > own trades via `source_kind === "agent"` / `tx_type === "agent_swap"`.
 - **You cannot switch wallets via the API.** The owner picks the wallet in
   the AI Agents UI. They can change it there; on next call you'll see the
   new wallet via `/scope`.

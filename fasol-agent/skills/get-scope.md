@@ -11,7 +11,7 @@ required). Tier: `standard`.
 > intersection with what's actually available. The `data.wallet` field also
 > tells you which wallet your trades will fire on — your "self" identifier.
 > Reads (`/positions`, `/orders`, `/trades`, `/wallet_balance`) default to
-> this same wallet (⏳ next backend release; see the Wallet binding section
+> this same wallet (⏳ release 2026-07-09; see the Wallet binding section
 > in the parent skill for pre-release behavior), so you normally never need
 > to filter by wallet yourself.
 

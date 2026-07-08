@@ -15,10 +15,10 @@ the trades of the wallet you fire. `?wallet=<addr>` narrows to another of
 the owner's wallets, `?wallet=all` gives the account-wide view. Each row
 carries a `wallet` field, and the response echoes the active lens top-level.
 
-> ⏳ Ships with the next backend release. Until then the endpoint always
-> returns ALL of the account's wallets and rows have no `wallet` field —
-> recognise your own trades via `source_kind === "agent"` (orders-engine
-> fires) / `tx_type === "agent_swap"` (your swaps).
+> ⏳ Release 2026-07-09: ✅ dev (2026-07-09, verified end-to-end); prod: rolling out from 2026-07-09, status flips to ✅ after the 2026-07-10 verification. Until prod lands the
+> endpoint returns ALL of the account's wallets and rows have no `wallet`
+> field — recognise your own trades via `source_kind === "agent"` /
+> `tx_type === "agent_swap"`.
 
 ## Request
 
@@ -41,7 +41,7 @@ curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
 | `from_ts` | `now - 24h` | unix ms |
 | `to_ts` | `now` | unix ms |
 | `limit` | `100`, max **`500`** | paginate further by lowering `to_ts` |
-| `wallet` | bound wallet | `<addr>` = another owned wallet, `all` = account-wide (⏳ next release) |
+| `wallet` | bound wallet | `<addr>` = another owned wallet, `all` = account-wide (⏳ release 2026-07-09) |
 
 ## Response
 
