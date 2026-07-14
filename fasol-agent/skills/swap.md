@@ -148,3 +148,12 @@ don't loop.
 Per-cycle fees on `/swap` ≈ **0.0006 SOL** (gas + fasol_fee). At 0.001 SOL
 trade size that's 60% of the trade. Don't trade below 0.005 SOL unless you're
 doing dust cleanup — the math doesn't work.
+
+**Agent cashback.** Every trade through the agent API — `/swap` AND the fills
+of agent-placed limit / TP / SL / trailing orders — earns **80% of the fasol
+platform fee back** as claimable rewards (credited by a background worker to
+the account's reward balance, shown on the web `/rewards` page, withdrawn
+there by the owner). So the effective platform fee on agent trading is ~1/5
+of the sticker fee. Automatic on any tx tagged to your key — nothing to pass.
+(Global rate set by the platform; here for cost-model awareness, not a knob
+you configure.)
