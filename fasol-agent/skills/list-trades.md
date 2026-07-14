@@ -80,10 +80,12 @@ curl -s -G -H "Authorization: Bearer $FASOL_API_KEY" \
   - `take_profit` / `stop_loss` / `trailing` — relative-order fires (sells)
   - `ml_buy` / `ml_sell` — fired from an ml_order strategy
   - `agent_swap` — instant `/swap` you fired
+  - `aqb` — an **alert-autobuy BUY** (an alert with autobuy matched and bought)
   - `qb` / `terminal` — manual user trade (UI / Telegram quick-buy)
 - **`order_id`** — id of the order that fired (orders-engine row, OR ml_order id). `null` for manual trades and `/swap` trades.
 - **`source_kind` / `source_id`** — ownership tags.
   - `"agent" + <my_agent_id>` is yours **for orders-engine fires** (`limit_buy` / TP / SL / trailing).
+  - **Alert-autobuy cycle:** the entry buy (`tx_type: "aqb"`) AND the TP/SL/trailing sells it arms all carry `source_kind: "alert"`, `source_id: "<alert_id>"`. So one alert's whole autobuy cycle groups by `source_id` — the buy and its exits share it, and `tx_type` distinguishes entry (`aqb`) from exits (`take_profit`/`stop_loss`/`trailing`).
   - **`/swap` trades come back with `source_kind: null` and `source_id: null`** — they don't ride through the orders pipeline. To recognise your own `/swap` output, filter by `tx_type === "agent_swap" && !error_text`. Trying `source_kind === "agent"` for swap-driven bots returns nothing and your reconcile logic will compute `pnl=0`.
 - **`error_text`** — `null` for successful trades, a message for failed ones. Failed trades are **included** so you can see what didn't land.
 - **`price_usd` / `price_sol`** — precomputed at 12dp so you don't divide JS floats. Already accounts for slippage at execution time — this IS the actual fill price.
