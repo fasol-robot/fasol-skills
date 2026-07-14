@@ -6,9 +6,6 @@
 is derived server-side from the API key; you don't pass it. The response
 echoes which wallet was read in a top-level `wallet` field.
 
-> ⏳ Release 2026-07-09: ✅ dev (2026-07-09, verified end-to-end); prod: rolling out from 2026-07-09, status flips to ✅ after the 2026-07-10 verification. Until prod lands the server
-> reads the account's *active* wallet — positions may not match what
-> `/swap` / `/orders` trade on for multi-wallet owners.
 
 Requires `read_positions`. Tier: `medium`.
 

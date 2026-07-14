@@ -458,11 +458,11 @@
    "category": "analytics",
    "url": "skills/wallet-trades.md",
    "title": "Per-wallet trade performance (how did its buys do?)",
-   "subtitle": "GET /wallet/{wallet}/trades — per-coin PnL fold of any wallet's swaps: SOL in/out, balance, mark-to-market PnL. ⏳ release 2026-07-09.",
+   "subtitle": "GET /wallet/{wallet}/trades — per-coin PnL fold of any wallet's swaps: SOL in/out, balance, mark-to-market PnL.",
    "endpoint": "GET /wallet/{wallet}/trades",
    "scope": "read_wallets",
    "tier": "heavy",
-   "status": "pending_release",
+   "status": "stable",
    "capabilities": [
     "Per-coin realised + mark-to-market PnL over 1d/7d/30d/90d windows",
     "Entry price (in_sol/in_coin), buy/sell counts, first/last tx timestamps",

@@ -73,16 +73,13 @@ send and the SIGN of the value. All numeric values are **strings**:
 the position to sell (0 < sell_p ≤ 100). Exactly one of `trigger_p` /
 `trailing_p` per entry.
 
-⚠️ Sending a `type` key or bare JSON **numbers** (`"trigger_p": 50`) is NOT
-rejected today: the buy and the armed orders still execute, but the owner's
-web UI fails to render that alert's Autobuy settings and shows *"invalid
-config"* with a Delete prompt. Send string values exactly as above.
-
-> ⏳ Release 2026-07-09 adds server-side normalization on the agent surface:
-> numbers auto-coerced to strings, a `type` key consistent with the values
-> stripped, contradictory / malformed entries get a structured
-> `400 invalid_autobuy_orders`. ✅ dev (2026-07-09, verified end-to-end); prod: rolling out from 2026-07-09, status flips to ✅ after the 2026-07-10 verification.
-> The canonical string format above works identically before and after.
+The server normalizes on the agent surface (release 2026-07-09, ✅ prod (verified 2026-07-14)):
+bare JSON numbers are auto-coerced to strings, a `type` key consistent with
+the values is stripped, and contradictory / malformed entries get a
+structured `400 invalid_autobuy_orders` (with `invalid` + `example`).
+Still send the canonical string shape above — it's what's stored and what
+every other consumer expects. Alerts created with numbers BEFORE this
+release: re-send `POST /alert/{id}/autobuy` once to canonicalise them.
 
 
 ### `launchpads` — closed whitelist

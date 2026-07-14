@@ -13,9 +13,7 @@ buys perform?"* — the same data the Fasol web UI shows in the wallet drawer.
 Requires `read_wallets`. Tier: **`heavy` (5 rpm)** — designed as a one-shot
 backfill per wallet, not a poll target (see usage pattern below).
 
-> ⏳ Release 2026-07-09: ✅ dev (2026-07-09, verified end-to-end); prod: rolling out from 2026-07-09, status flips to ✅ after the 2026-07-10 verification.
-> If it still 404s on prod, do NOT treat that as "endpoint permanently
-> gone" — retry after your next skill refresh.
+> Release 2026-07-09: ✅ dev, ✅ prod (verified 2026-07-14).
 
 ## Request
 

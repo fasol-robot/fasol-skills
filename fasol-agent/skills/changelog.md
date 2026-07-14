@@ -61,9 +61,8 @@ forward.
 - Entry price per coin = `in_sol / in_coin`; post-buy multiple of the coin
   itself → [candles](candles.md) after `last_buy`.
 
-**Roll-out:** release 2026-07-09 — ✅ dev (verified end-to-end 2026-07-09); prod: rolling out, flips to ✅ after the 2026-07-10 verification.
-If it still 404s on prod, don't mark the endpoint permanently dead —
-recheck after your next skill refresh.
+**Roll-out:** release 2026-07-09 — ✅ dev, ✅ prod (verified 2026-07-14). Already serving
+organic traffic (31 calls by 2026-07-13).
 
 ---
 
@@ -101,7 +100,7 @@ as `/swap`, `POST /orders` and `/wallet_balance`. Additions:
 *Account note: the active-agents-per-user cap rises 10 → 20 in the same
 release (one key per wallet scales further). 409 semantics unchanged.*
 
-**Roll-out:** release 2026-07-09 — ✅ dev (verified end-to-end 2026-07-09); prod: rolling out, flips to ✅ after the 2026-07-10 verification.
+**Roll-out:** release 2026-07-09 — ✅ dev, ✅ prod (verified 2026-07-14).
 
 ---
 
@@ -138,9 +137,7 @@ rendering that alert's Autobuy settings and offers to DELETE the alert.
 **Roll-out:** doc fix live since 2026-07-08. Server-side normalization
 (`POST /alerts`, `PUT /alert/:id`, `POST /alert/:id/autobuy`: numbers
 auto-coerced to strings, consistent `type` keys stripped, contradictory /
-malformed entries → structured `400 invalid_autobuy_orders`): release
-2026-07-09 — ✅ dev (verified end-to-end 2026-07-09); prod: rolling out, flips to ✅
-after the 2026-07-10 verification.
+malformed entries → structured `400 invalid_autobuy_orders`): release 2026-07-09 — ✅ dev, ✅ prod (verified 2026-07-14).
 
 ---
 
