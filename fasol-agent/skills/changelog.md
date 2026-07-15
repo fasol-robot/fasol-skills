@@ -57,9 +57,8 @@ exits.
 - Group an alert cycle by `source_id === "<alert_id>"`; read `tx_type` to
   tell entry (`aqb`) from exits.
 
-**Roll-out:** release 2026-07-14 — SQL fallback verified against live dev
-data (aqb rows resolve to `alert` + `alert_id`, grouping with their sells);
-⏳ dev/prod with the next backend deploy.
+**Roll-out:** release 2026-07-14 — ✅ dev, ✅ prod (verified 2026-07-15:
+aqb rows on prod resolve to `alert` + `alert_id`, grouping with their sells).
 
 ---
 
@@ -83,9 +82,9 @@ the sticker fee.
 - Cashback is claimable by the OWNER on the web app, not via the agent API.
   Don't promise the owner you can withdraw it — you can't.
 
-**Roll-out:** release 2026-07-14 — ⏳ dev (needs migration 000095 +
-`rewards` service restart, then verify `sol.rewards.agent` accrues); prod
-after. Global rate via env `AGENT_CASHBACK_P` (default 80).
+**Roll-out:** release 2026-07-14 — ✅ dev, ✅ prod (verified 2026-07-15:
+`sol.rewards.agent` accruing to real users on prod). Global rate via env
+`AGENT_CASHBACK_P` (default 80).
 
 ---
 
